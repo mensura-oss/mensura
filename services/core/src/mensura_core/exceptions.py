@@ -210,3 +210,42 @@ class ProviderUpstreamFailedError(RunExecutionError):
 class StructuredResultInvalidError(RunExecutionError):
     def __init__(self, run_id: UUID) -> None:
         super().__init__(f"Provider returned an invalid structured result for run '{run_id}'.")
+
+
+class ChangeProposalError(CoreError):
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)
+
+
+class ChangeProposalNotFoundError(ChangeProposalError):
+    def __init__(self, proposal_id: UUID) -> None:
+        super().__init__(f"Change proposal '{proposal_id}' was not found.")
+
+
+class ChangeProposalRunNotEligibleError(ChangeProposalError):
+    def __init__(self, run_id: UUID, status: str, reason: str | None = None) -> None:
+        detail = f"Run '{run_id}' cannot produce a change proposal from status '{status}'."
+        if reason is not None:
+            detail = f"Run '{run_id}' cannot produce a change proposal. {reason}"
+        super().__init__(detail)
+
+
+class ChangeProposalOutputInvalidError(ChangeProposalError):
+    def __init__(self, run_id: UUID, reason: str) -> None:
+        super().__init__(f"Run '{run_id}' contains malformed change-proposal output. {reason}")
+
+
+class ChangeProposalContentTooLargeError(ChangeProposalError):
+    def __init__(self, run_id: UUID, actual_bytes: int, maximum_bytes: int) -> None:
+        super().__init__(
+            f"Run '{run_id}' proposes {actual_bytes} bytes of text; the maximum source size is "
+            f"{maximum_bytes} bytes."
+        )
+
+
+class ChangeProposalInvalidStateError(ChangeProposalError):
+    def __init__(self, proposal_id: UUID, status: str) -> None:
+        super().__init__(
+            f"Change proposal '{proposal_id}' cannot be reviewed from status '{status}'."
+        )

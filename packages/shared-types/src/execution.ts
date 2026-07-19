@@ -1,8 +1,9 @@
 import type { ContextPackDigest } from "./context-pack.js";
+import type { ChangeProposalDraft } from "./change-proposal.js";
 import type { EntityId } from "./domain.js";
 import type { PromptVersion, ProviderKind } from "./provider.js";
 
-export const RUN_EXECUTION_SCHEMA_VERSION = "1" as const;
+export const RUN_EXECUTION_SCHEMA_VERSION = "2" as const;
 
 export interface RunProviderMetadata {
   providerId: string;
@@ -32,6 +33,7 @@ export interface RunExecutionResult {
   context: RunExecutionContextSummary;
   warnings: readonly string[];
   recommendedNextSteps: readonly string[];
+  proposalDraft: ChangeProposalDraft;
 }
 
 export type RunExecutionFailureCode =

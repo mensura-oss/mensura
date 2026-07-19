@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCoreClient } from "../../api/CoreClientProvider";
 import { queryKeys } from "../../app/queryClient";
 import { ProblemDetailsView } from "../../components/ProblemDetailsView";
+import { ChangeProposalPanel } from "../change-proposals/ChangeProposalPanel";
 
 export function RunExecutionPanel({ run }: { run: Run }) {
   const client = useCoreClient();
@@ -151,6 +152,7 @@ export function RunExecutionPanel({ run }: { run: Run }) {
           <span>{run.execution.failure.summary}</span>
         </div>
       ) : null}
+      <ChangeProposalPanel run={run} />
     </section>
   );
 }
@@ -161,7 +163,7 @@ const DETERMINISTIC_PROVIDER: ProviderDescriptor = {
   kind: "deterministic",
   configured: true,
   model: null,
-  promptVersion: "review.v1",
+  promptVersion: "review.v2",
 };
 
 function ExecutionResult({ result }: { result: RunExecutionResult }) {

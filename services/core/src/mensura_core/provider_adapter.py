@@ -2,6 +2,7 @@ from typing import Protocol
 
 from mensura_core.context_pack_models import ContextPackManifest
 from mensura_core.models import (
+    ChangeProposalDraft,
     PromptVersion,
     ProviderId,
     ProviderKind,
@@ -52,7 +53,7 @@ class DeterministicReviewProvider:
         adapter_id="deterministic-review",
         adapter_version="1.0.0",
         model=None,
-        prompt_version=PromptVersion.REVIEW_V1,
+        prompt_version=PromptVersion.REVIEW_V2,
     )
 
     @property
@@ -86,7 +87,15 @@ class DeterministicReviewProvider:
             warnings=tuple(warnings),
             recommended_next_steps=(
                 "Review this bounded result against the immutable context before continuing.",
-                "Use a separate write-isolated adapter for any future change proposal.",
+                "Materialize the write-isolated proposal artifact before any review decision.",
+            ),
+            proposal_draft=ChangeProposalDraft(
+                summary="No file changes proposed by the deterministic review provider.",
+                rationale=(
+                    "The built-in provider verifies context lineage and execution boundaries but "
+                    "does not synthesize code changes."
+                ),
+                file_changes=(),
             ),
         )
 

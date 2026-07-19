@@ -18,7 +18,7 @@ describe("ProviderSettingsPanel", () => {
 
     expect(screen.getByText("Deterministic review")).toBeVisible();
     expect(await screen.findByText("configured")).toBeVisible();
-    expect(screen.getByText(/gpt-5-mini · review.v1/)).toBeVisible();
+    expect(screen.getByText(/gpt-5-mini · review.v2/)).toBeVisible();
     expect(screen.getByLabelText("OpenAI API key")).toHaveValue("");
     expect(screen.queryByText("sk-secret")).toBeNull();
 
@@ -89,7 +89,7 @@ const deterministic: ProviderDescriptor = {
   kind: "deterministic",
   configured: true,
   model: null,
-  promptVersion: "review.v1",
+  promptVersion: "review.v2",
 };
 
 const unconfiguredOpenAI: ProviderDescriptor = {
@@ -98,7 +98,7 @@ const unconfiguredOpenAI: ProviderDescriptor = {
   kind: "real",
   configured: false,
   model: null,
-  promptVersion: "review.v1",
+  promptVersion: "review.v2",
 };
 
 const configuredOpenAI: ProviderDescriptor = {

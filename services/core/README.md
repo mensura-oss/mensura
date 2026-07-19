@@ -1,6 +1,6 @@
 # Mensura Core
 
-Mensura Core is the HTTP boundary for tasks and controlled agent execution. The current service implements versioned resource contracts, process-local resource storage, read-only local Git inspection, deterministic Vault inventory/retrieval, immutable context-pack assembly, a manual Ruff/pytest Guard runner, the credential-free deterministic provider, and one optional OpenAI BYOK adapter with bounded structured results. It does not edit repositories, generate embeddings, return patch content, implement a full policy engine, or persist run resources across restarts.
+Mensura Core is the HTTP boundary for tasks and controlled agent execution. The current service implements versioned resource contracts, process-local resource storage, read-only local Git inspection, deterministic Vault inventory/retrieval, immutable context-pack assembly, a manual Ruff/pytest Guard runner, the credential-free deterministic provider, one optional OpenAI BYOK adapter with bounded structured results, and separately persisted write-isolated change-proposal review. It does not edit repositories, apply patches, generate embeddings, implement a full policy engine, or persist run/proposal resources across restarts.
 
 ## Requirements
 
@@ -59,6 +59,11 @@ JSON property names use camelCase. Resource identifiers are UUIDs and timestamps
 | `POST` | `/api/v1/tasks/{task_id}/runs` | Creates a queued run bound to an immutable context pack |
 | `GET` | `/api/v1/providers` | Lists deterministic/OpenAI availability with redacted local configuration state |
 | `PUT` | `/api/v1/providers/openai/config` | Saves a write-only API key plus non-secret model setting locally |
+| `POST` | `/api/v1/runs/{run_id}/change-proposals` | Creates/reopens one bounded proposal from a successful run |
+| `GET` | `/api/v1/change-proposals/{proposal_id}` | Returns one proposal artifact |
+| `GET` | `/api/v1/workspaces/{workspace_id}/change-proposals` | Lists proposal artifacts for a workspace |
+| `POST` | `/api/v1/change-proposals/{proposal_id}/approve` | Records approval without applying changes |
+| `POST` | `/api/v1/change-proposals/{proposal_id}/reject` | Records rejection without applying changes |
 
 `POST /api/v1/tasks/{task_id}/runs` requires this strict body:
 
@@ -84,11 +89,23 @@ The other supported value is `openai`, which must be configured first. The reque
 
 The implemented state machine is exactly `queued -> running -> succeeded | failed`. An atomic expected-status repository update claims a queued run before provider work, so overlapping requests cannot both execute it. `startedAt` is persisted on the running transition; `finishedAt`, bounded duration, and either a validated result or safe failure are persisted on the terminal transition. Any later execute request is a `409` conflict. There is no cancellation or retry transition in this slice.
 
-`ProviderRegistry` resolves selection before Core claims the queued run. `ProviderAdapter` then isolates immutable adapter identity and a typed execution request/result. The default `DeterministicReviewProvider` is credential-free and receives only the stored Task plus the complete bounded `ContextPackManifest`; it receives no `Workspace`, `rootPath`, Git/filesystem/subprocess capability, credential, or write method. It deterministically returns schema-v1 task intent, context aggregates and languages, bounded warnings, and recommended review steps.
+`ProviderRegistry` resolves selection before Core claims the queued run. `ProviderAdapter` then isolates immutable adapter identity and a typed execution request/result. The default `DeterministicReviewProvider` is credential-free and receives only the stored Task plus the complete bounded `ContextPackManifest`; it receives no `Workspace`, `rootPath`, Git/filesystem/subprocess capability, credential, or write method. It deterministically returns schema-v2 task intent, context aggregates/languages, bounded warnings/review steps, and an explicit empty-change proposal draft rather than fabricating code.
 
-The optional `OpenAIReviewProvider` calls the Responses API with `store: false`, no tools, input truncation disabled, a 1,200-token output cap, and strict JSON Schema. The code-controlled `review.v1` mapping serializes only the persisted Task and exact immutable manifest, including already bounded captured previews. Core parses and locally validates the compact model payload, then attaches context counts/digests derived from the manifest rather than trusting model claims. It does not read the repository during execution or expose prompts, preview bodies, raw upstream responses, or credentials in the run result.
+The optional `OpenAIReviewProvider` calls the Responses API with `store: false`, no tools, input truncation disabled, a 1,200-token output cap, and strict JSON Schema. The code-controlled `review.v2` mapping serializes only the persisted Task and exact immutable manifest, including already bounded captured previews. It adds a compact proposal draft with summary, rationale, and at most 16 create/modify/delete text suggestions; an empty list is valid. Core parses and locally validates the model payload, then attaches context counts/digests derived from the manifest rather than trusting model claims. It does not read the repository during execution or expose prompts, raw upstream responses, or credentials in the run result. `review.v1` remains defined with its original no-file-modification meaning.
 
 Provider identity is visible as `providerId`, `providerKind`, `adapterId`, `adapterVersion`, nullable `model`, and `promptVersion`. Provider and validation failures persist a failed run with a closed safe code/summary before returning RFC 9457 Problem Details; exception, upstream body, credential, and schema internals are not exposed. Unsupported or unconfigured selection occurs before claim and leaves the run queued. A selected OpenAI failure never silently changes to deterministic. The HTTP action is synchronous through FastAPI's worker-thread handling. Background workers, brokers, streaming/SSE, retries, additional vendors/prompts, repository changes, and orchestration remain deferred.
+
+## Write-isolated change proposals
+
+`POST /api/v1/runs/{run_id}/change-proposals` accepts no body. The run must already be `succeeded` with a schema-v2 result. Core uses the proposal draft stored in that terminal result and rechecks the exact task/workspace/context-pack lineage before creating an independent `ChangeProposal` schema-v1 artifact. It does not call a provider again and `ChangeProposalService` has no workspace root, Git, filesystem, subprocess, tool, or write dependency.
+
+One idempotent proposal is stored per source run. The response is `{ "proposal": {...}, "created": boolean }` and includes `Location`; a repeated request returns the exact artifact with `created: false`. Proposal identity is a UUID. The artifact records source run/task/workspace, exact context-pack digest, provider/prompt lineage, created/reviewed timestamps, summary/rationale, and deterministically path-sorted file changes.
+
+File change types are closed to `create`, `modify`, and `delete`. Paths must be normalized relative POSIX paths. Modify/delete paths must exist in the immutable manifest; create paths must not. Text bodies are refused for captured binary files and deletes. Core derives `beforeDigest` from the immutable entry and `afterDigest` from the complete proposed UTF-8 text—never from live repository state or a provider-supplied digest.
+
+At most 16 changes are accepted. Aggregate source text is capped at 128 KiB; larger drafts are rejected with `413`. Stored content is UTF-8-safe truncated to 8 KiB/file and 32 KiB/proposal, with `proposedTextBytes`, `originalTextBytes`, and `truncated` fields. The after digest still represents the complete pre-truncation suggestion. There is no raw patch/hunk field and no binary body.
+
+Review state belongs only to the proposal. The complete lifecycle is `proposed -> approved | rejected`; expected-state repository replacement makes the first decision terminal, and a repeated/conflicting decision returns `409`. Approve/reject does not update the run, execute Guard, apply content, invoke Git, or write repository files. Patch application, Guard-on-proposal, rollback, and durable audit history are deferred.
 
 ## Local BYOK configuration
 
@@ -219,8 +236,16 @@ Run execution additionally uses:
 - `urn:mensura:problem:provider-upstream-failed` (`502`);
 - `urn:mensura:problem:structured-result-invalid` (`502`) when adapter output fails the bounded schema.
 
+Change proposals additionally use:
+
+- `urn:mensura:problem:change-proposal-not-found` (`404`);
+- `urn:mensura:problem:change-proposal-run-not-eligible` (`409`) for a non-successful run;
+- `urn:mensura:problem:change-proposal-output-invalid` (`422`) for unsafe paths, inconsistent lineage, binary text, duplicates, or invalid change semantics;
+- `urn:mensura:problem:change-proposal-content-too-large` (`413`) when source text exceeds 128 KiB;
+- `urn:mensura:problem:change-proposal-invalid-state` (`409`) after any prior review decision.
+
 Problem URNs are stable machine identifiers. They can be replaced by resolvable HTTPS documentation only as a versioned compatibility decision.
 
 ## Storage boundary
 
-Resource routers depend on `CoreService`; provider routes use `ProviderRegistry`; Guard, Vault, and context-pack routes retain their dedicated services. Services use replaceable storage/config/credential/runner/Git/filesystem/provider protocols. Workspaces/tasks/runs, Guard results, Vault inventories, and context packs remain in memory. Only the non-secret OpenAI model setting and keyring credential survive Core restarts. Git/filesystem adapters provide read-only live inspection; provider adapters consume only persisted task/context objects. External filesystem changes can make inventory/context capture best-effort, but executing a run does not reread the repository and uses only the already captured immutable manifest.
+Resource routers depend on `CoreService`; provider routes use `ProviderRegistry`; Guard, Vault, context-pack, and change-proposal routes retain dedicated services. Services use replaceable storage/config/credential/runner/Git/filesystem/provider protocols. Workspaces/tasks/runs, Guard results, Vault inventories, context packs, and change proposals remain in memory. Only the non-secret OpenAI model setting and keyring credential survive Core restarts. Git/filesystem adapters provide read-only live inspection; provider adapters consume only persisted task/context objects; proposal materialization consumes only the persisted successful run plus its exact stored manifest. External filesystem changes can make inventory/context capture best-effort, but executing a run or creating/reviewing its proposal does not reread or write the repository.

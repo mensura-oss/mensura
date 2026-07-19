@@ -9,6 +9,11 @@ from pydantic import BaseModel, ConfigDict
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from mensura_core.exceptions import (
+    ChangeProposalContentTooLargeError,
+    ChangeProposalInvalidStateError,
+    ChangeProposalNotFoundError,
+    ChangeProposalOutputInvalidError,
+    ChangeProposalRunNotEligibleError,
     ContextPackFileChangedError,
     ContextPackInvalidSelectionError,
     ContextPackNotFoundError,
@@ -79,6 +84,11 @@ PROVIDER_CONFIGURATION_UNAVAILABLE_TYPE = "urn:mensura:problem:provider-configur
 PROVIDER_CREDENTIALS_INVALID_TYPE = "urn:mensura:problem:provider-credentials-invalid"
 PROVIDER_UPSTREAM_FAILED_TYPE = "urn:mensura:problem:provider-upstream-failed"
 STRUCTURED_RESULT_INVALID_TYPE = "urn:mensura:problem:structured-result-invalid"
+CHANGE_PROPOSAL_NOT_FOUND_TYPE = "urn:mensura:problem:change-proposal-not-found"
+CHANGE_PROPOSAL_RUN_NOT_ELIGIBLE_TYPE = "urn:mensura:problem:change-proposal-run-not-eligible"
+CHANGE_PROPOSAL_OUTPUT_INVALID_TYPE = "urn:mensura:problem:change-proposal-output-invalid"
+CHANGE_PROPOSAL_CONTENT_TOO_LARGE_TYPE = "urn:mensura:problem:change-proposal-content-too-large"
+CHANGE_PROPOSAL_INVALID_STATE_TYPE = "urn:mensura:problem:change-proposal-invalid-state"
 
 
 class InvalidParameter(BaseModel):
@@ -518,6 +528,66 @@ def install_problem_handlers(app: FastAPI) -> None:
             detail=error.detail,
         )
 
+    @app.exception_handler(ChangeProposalNotFoundError)
+    async def change_proposal_not_found_handler(
+        request: Request, error: ChangeProposalNotFoundError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=404,
+            problem_type=CHANGE_PROPOSAL_NOT_FOUND_TYPE,
+            title="Change proposal not found",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ChangeProposalRunNotEligibleError)
+    async def change_proposal_run_not_eligible_handler(
+        request: Request, error: ChangeProposalRunNotEligibleError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=CHANGE_PROPOSAL_RUN_NOT_ELIGIBLE_TYPE,
+            title="Run is not eligible for a change proposal",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ChangeProposalOutputInvalidError)
+    async def change_proposal_output_invalid_handler(
+        request: Request, error: ChangeProposalOutputInvalidError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=422,
+            problem_type=CHANGE_PROPOSAL_OUTPUT_INVALID_TYPE,
+            title="Change proposal output is invalid",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ChangeProposalContentTooLargeError)
+    async def change_proposal_content_too_large_handler(
+        request: Request, error: ChangeProposalContentTooLargeError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=413,
+            problem_type=CHANGE_PROPOSAL_CONTENT_TOO_LARGE_TYPE,
+            title="Change proposal content is too large",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ChangeProposalInvalidStateError)
+    async def change_proposal_invalid_state_handler(
+        request: Request, error: ChangeProposalInvalidStateError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=CHANGE_PROPOSAL_INVALID_STATE_TYPE,
+            title="Change proposal is already reviewed",
+            detail=error.detail,
+        )
+
     @app.exception_handler(RequestValidationError)
     async def request_validation_handler(
         request: Request, error: RequestValidationError
@@ -584,6 +654,15 @@ GUARD_EXECUTION_RESPONSE = problem_response(500, "A configured Guard command cou
 FORBIDDEN_RESPONSE = problem_response(403, "The requested path is excluded from Vault access.")
 UNSUPPORTED_MEDIA_RESPONSE = problem_response(415, "The requested file is not previewable text.")
 PAYLOAD_TOO_LARGE_RESPONSE = problem_response(413, "The context-pack selection exceeds a limit.")
+CHANGE_PROPOSAL_TOO_LARGE_RESPONSE = problem_response(
+    413, "The stored proposal draft exceeds the bounded source-content limit."
+)
+CHANGE_PROPOSAL_CONFLICT_RESPONSE = problem_response(
+    409, "The run or proposal state does not allow this action."
+)
+CHANGE_PROPOSAL_INVALID_RESPONSE = problem_response(
+    422, "The stored provider proposal output is not safe to materialize."
+)
 EXECUTION_CONFLICT_RESPONSE = problem_response(409, "The run cannot execute from current state.")
 PROVIDER_EXECUTION_RESPONSE = problem_response(502, "The provider execution did not succeed.")
 PROVIDER_CONFIGURATION_RESPONSE = problem_response(

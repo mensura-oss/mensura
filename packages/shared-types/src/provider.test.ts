@@ -10,7 +10,7 @@ import {
 describe("provider contracts", () => {
   it("keeps the initial provider and prompt choices closed and explicit", () => {
     expect(PROVIDER_IDS).toEqual(["mensura.builtin", "openai"]);
-    expect(PROMPT_VERSIONS).toEqual(["review.v1"]);
+    expect(PROMPT_VERSIONS).toEqual(["review.v1", "review.v2"]);
 
     const request: ExecuteRunRequest = { providerId: "mensura.builtin" };
     expect(request.providerId).toBe("mensura.builtin");
@@ -26,7 +26,7 @@ describe("provider contracts", () => {
           kind: "deterministic",
           configured: true,
           model: null,
-          promptVersion: "review.v1",
+          promptVersion: "review.v2",
         },
         {
           id: "openai",
@@ -34,7 +34,7 @@ describe("provider contracts", () => {
           kind: "real",
           configured: false,
           model: null,
-          promptVersion: "review.v1",
+          promptVersion: "review.v2",
         },
       ],
     };

@@ -23,6 +23,11 @@ def test_openapi_exposes_the_implemented_v1_contract(client: TestClient) -> None
         "/api/v1/runs/{run_id}/execute",
         "/api/v1/providers",
         "/api/v1/providers/openai/config",
+        "/api/v1/runs/{run_id}/change-proposals",
+        "/api/v1/change-proposals/{proposal_id}",
+        "/api/v1/workspaces/{workspace_id}/change-proposals",
+        "/api/v1/change-proposals/{proposal_id}/approve",
+        "/api/v1/change-proposals/{proposal_id}/reject",
     }
 
 
@@ -44,6 +49,8 @@ def test_openapi_documents_camel_case_and_problem_media_type(client: TestClient)
     execute_request = schema["components"]["schemas"]["RunExecute"]
     provider_descriptor = schema["components"]["schemas"]["ProviderDescriptor"]
     openai_config = schema["components"]["schemas"]["OpenAIProviderConfigure"]
+    change_proposal = schema["components"]["schemas"]["ChangeProposal"]
+    proposal_file_change = schema["components"]["schemas"]["ChangeProposalFileChange"]
 
     assert set(workspace_create["properties"]) == {"name", "rootPath"}
     assert "workspaceId" in task["properties"]
@@ -110,6 +117,7 @@ def test_openapi_documents_camel_case_and_problem_media_type(client: TestClient)
         "context",
         "warnings",
         "recommendedNextSteps",
+        "proposalDraft",
     }
     assert set(provider["properties"]) == {
         "providerId",
@@ -133,6 +141,38 @@ def test_openapi_documents_camel_case_and_problem_media_type(client: TestClient)
         "promptVersion",
     }
     assert set(openai_config["properties"]) == {"apiKey", "model"}
+    assert set(change_proposal["properties"]) == {
+        "id",
+        "schemaVersion",
+        "runId",
+        "taskId",
+        "workspaceId",
+        "contextPackId",
+        "providerId",
+        "promptVersion",
+        "status",
+        "createdAt",
+        "reviewedAt",
+        "summary",
+        "rationale",
+        "fileChanges",
+    }
+    assert set(proposal_file_change["properties"]) == {
+        "path",
+        "changeType",
+        "language",
+        "beforeDigest",
+        "afterDigest",
+        "proposedText",
+        "proposedTextBytes",
+        "originalTextBytes",
+        "truncated",
+    }
+    assert proposal_file_change["properties"]["proposedTextBytes"]["maximum"] == 8192
+    assert all(
+        forbidden not in change_proposal["properties"]
+        for forbidden in ("appliedAt", "patch", "repositoryPath", "command")
+    )
     assert set(context_pack["properties"]) == {
         "id",
         "digest",

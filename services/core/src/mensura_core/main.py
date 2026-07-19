@@ -4,6 +4,11 @@ from mensura_core import __version__
 from mensura_core.api.problems import install_problem_handlers
 from mensura_core.api.router import router as v1_router
 from mensura_core.api.routers.health import router as health_router
+from mensura_core.change_proposal_repositories import (
+    ChangeProposalRepository,
+    InMemoryChangeProposalRepository,
+)
+from mensura_core.change_proposal_service import ChangeProposalService
 from mensura_core.context_pack_repositories import (
     ContextPackRepository,
     InMemoryContextPackRepository,
@@ -44,6 +49,7 @@ def create_app(
     vault_inventory_builder: VaultInventoryBuilder | None = None,
     vault_inventory_repository: VaultInventoryRepository | None = None,
     context_pack_repository: ContextPackRepository | None = None,
+    change_proposal_repository: ChangeProposalRepository | None = None,
     provider: ProviderAdapter | None = None,
     provider_registry: ProviderRegistry | None = None,
     provider_settings_repository: ProviderSettingsRepository | None = None,
@@ -92,6 +98,11 @@ def create_app(
         core_repository,
         inventory_repository,
         immutable_context_pack_repository,
+    )
+    app.state.change_proposal_service = ChangeProposalService(
+        core_repository,
+        immutable_context_pack_repository,
+        change_proposal_repository or InMemoryChangeProposalRepository(),
     )
     install_problem_handlers(app)
     app.include_router(health_router)

@@ -6,7 +6,7 @@ import {
   type RunExecution,
 } from "./index.js";
 
-describe("run execution v1 contracts", () => {
+describe("run execution v2 contracts", () => {
   it("pins the first real run state machine", () => {
     expect(RUN_STATUSES).toEqual(["queued", "running", "succeeded", "failed"]);
   });
@@ -19,7 +19,7 @@ describe("run execution v1 contracts", () => {
         adapterId: "deterministic-review",
         adapterVersion: "1.0.0",
         model: null,
-        promptVersion: "review.v1",
+        promptVersion: "review.v2",
       },
       durationMs: 4,
       result: {
@@ -39,11 +39,23 @@ describe("run execution v1 contracts", () => {
         },
         warnings: [],
         recommendedNextSteps: ["Review the result."],
+        proposalDraft: {
+          summary: "Update the selected module.",
+          rationale: "The requested behavior belongs in this module.",
+          fileChanges: [
+            {
+              path: "src/example.ts",
+              changeType: "modify",
+              language: "TypeScript",
+              proposedText: "export const ready = true;\n",
+            },
+          ],
+        },
       },
       failure: null,
     };
 
-    expect(execution.result?.schemaVersion).toBe("1");
+    expect(execution.result?.schemaVersion).toBe("2");
     expect(execution.provider.model).toBeNull();
   });
 });

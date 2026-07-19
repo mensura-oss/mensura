@@ -2,6 +2,7 @@ from typing import Annotated, cast
 
 from fastapi import Depends, Request
 
+from mensura_core.change_proposal_service import ChangeProposalService
 from mensura_core.context_pack_service import ContextPackService
 from mensura_core.guard_service import GuardService
 from mensura_core.provider_registry import ProviderRegistry
@@ -35,6 +36,16 @@ def get_context_pack_service(request: Request) -> ContextPackService:
 
 
 ContextPackServiceDependency = Annotated[ContextPackService, Depends(get_context_pack_service)]
+
+
+def get_change_proposal_service(request: Request) -> ChangeProposalService:
+    return cast(ChangeProposalService, request.app.state.change_proposal_service)
+
+
+ChangeProposalServiceDependency = Annotated[
+    ChangeProposalService,
+    Depends(get_change_proposal_service),
+]
 
 
 def get_provider_registry(request: Request) -> ProviderRegistry:

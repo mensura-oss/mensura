@@ -4,7 +4,7 @@ export type ProviderId = (typeof PROVIDER_IDS)[number];
 export const PROVIDER_KINDS = ["deterministic", "real"] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 
-export const PROMPT_VERSIONS = ["review.v1"] as const;
+export const PROMPT_VERSIONS = ["review.v1", "review.v2"] as const;
 export type PromptVersion = (typeof PROMPT_VERSIONS)[number];
 
 export interface ProviderDescriptor {

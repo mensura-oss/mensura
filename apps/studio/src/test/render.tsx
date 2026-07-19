@@ -10,10 +10,12 @@ export function createTestClient(
 ): CoreClient {
   return {
     baseUrl: "http://127.0.0.1:8000",
+    approveChangeProposal: () => Promise.reject(new Error("Not implemented in test")),
     buildVaultInventory: () => Promise.reject(new Error("Not implemented in test")),
     configureOpenAIProvider: () =>
       Promise.reject(new Error("Not implemented in test")),
     createContextPack: () => Promise.reject(new Error("Not implemented in test")),
+    createChangeProposal: () => Promise.reject(new Error("Not implemented in test")),
     createGuardRun: () => Promise.reject(new Error("Not implemented in test")),
     createRun: () => Promise.reject(new Error("Not implemented in test")),
     createTask: () => Promise.reject(new Error("Not implemented in test")),
@@ -21,6 +23,7 @@ export function createTestClient(
     executeRun: () => Promise.reject(new Error("Not implemented in test")),
     getHealth: () => Promise.reject(new Error("Not implemented in test")),
     getContextPack: () => Promise.reject(new Error("Not implemented in test")),
+    getChangeProposal: () => Promise.reject(new Error("Not implemented in test")),
     getLatestGuardRun: () => Promise.reject(new Error("Not implemented in test")),
     getRun: () => Promise.reject(new Error("Not implemented in test")),
     getTask: () => Promise.reject(new Error("Not implemented in test")),
@@ -29,6 +32,7 @@ export function createTestClient(
     getWorkspaceRepository: () =>
       Promise.reject(new Error("Not implemented in test")),
     listContextPacks: () => Promise.reject(new Error("Not implemented in test")),
+    listChangeProposals: () => Promise.resolve({ items: [], total: 0 }),
     listProviders: () => Promise.resolve({
       items: [
         {
@@ -37,7 +41,7 @@ export function createTestClient(
           kind: "deterministic",
           configured: true,
           model: null,
-          promptVersion: "review.v1",
+          promptVersion: "review.v2",
         },
         {
           id: "openai",
@@ -45,13 +49,14 @@ export function createTestClient(
           kind: "real",
           configured: false,
           model: null,
-          promptVersion: "review.v1",
+          promptVersion: "review.v2",
         },
       ],
       total: 2,
     }),
     listWorkspaces: () => Promise.reject(new Error("Not implemented in test")),
     listVaultFiles: () => Promise.reject(new Error("Not implemented in test")),
+    rejectChangeProposal: () => Promise.reject(new Error("Not implemented in test")),
     ...overrides,
   };
 }

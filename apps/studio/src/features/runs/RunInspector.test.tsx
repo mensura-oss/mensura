@@ -149,7 +149,7 @@ describe("RunInspector", () => {
               kind: "deterministic",
               configured: true,
               model: null,
-              promptVersion: "review.v1",
+              promptVersion: "review.v2",
             },
             {
               id: "openai",
@@ -157,7 +157,7 @@ describe("RunInspector", () => {
               kind: "real",
               configured: true,
               model: "gpt-5-mini",
-              promptVersion: "review.v1",
+              promptVersion: "review.v2",
             },
           ],
         }),
@@ -168,12 +168,12 @@ describe("RunInspector", () => {
     await user.click(screen.getByRole("button", { name: "Inspect" }));
     await user.selectOptions(await screen.findByLabelText("Execution provider"), "openai");
 
-    expect(screen.getByText(/Selected: real · review.v1 · gpt-5-mini/)).toBeVisible();
+    expect(screen.getByText(/Selected: real · review.v2 · gpt-5-mini/)).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Execute run" }));
 
     expect(await screen.findByText("openai-responses · v1.0.0")).toBeVisible();
     expect(screen.getByText("real")).toBeVisible();
-    expect(screen.getByText("review.v1")).toBeVisible();
+    expect(screen.getByText("review.v2")).toBeVisible();
     expect(executeRun).toHaveBeenCalledWith(queued.id, { providerId: "openai" });
   });
 });
@@ -214,7 +214,7 @@ function makeRun(status: "queued" | "succeeded" | "failed"): Run {
     adapterId: "deterministic-review",
     adapterVersion: "1.0.0",
     model: null,
-    promptVersion: "review.v1" as const,
+    promptVersion: "review.v2" as const,
   };
   if (status === "failed") {
     return {
@@ -243,7 +243,7 @@ function makeRun(status: "queued" | "succeeded" | "failed"): Run {
       durationMs: 12,
       failure: null,
       result: {
-        schemaVersion: "1",
+        schemaVersion: "2",
         taskSummary: "Review immutable evidence.",
         interpretedIntent: "Inspect the selected files without changing them.",
         context: {
@@ -259,6 +259,11 @@ function makeRun(status: "queued" | "succeeded" | "failed"): Run {
         },
         warnings: [],
         recommendedNextSteps: ["Review the result."],
+        proposalDraft: {
+          summary: "No file changes proposed.",
+          rationale: "The deterministic provider only reviewed immutable evidence.",
+          fileChanges: [],
+        },
       },
     },
   };
@@ -277,7 +282,7 @@ function makeOpenAIRun(): Run {
         adapterId: "openai-responses",
         adapterVersion: "1.0.0",
         model: "gpt-5-mini",
-        promptVersion: "review.v1",
+        promptVersion: "review.v2",
       },
     },
   };

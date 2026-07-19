@@ -9,6 +9,7 @@ from mensura_core.models import (
     ApiModel,
     BoundedMessage,
     BoundedSummary,
+    ChangeProposalDraft,
     PromptVersion,
     ProviderId,
     ProviderKind,
@@ -59,6 +60,7 @@ class OpenAIReviewOutput(ApiModel):
     interpreted_intent: BoundedSummary
     warnings: Annotated[tuple[BoundedMessage, ...], Field(max_length=8)]
     recommended_next_steps: Annotated[tuple[BoundedMessage, ...], Field(min_length=1, max_length=8)]
+    proposal_draft: ChangeProposalDraft
 
 
 class OpenAIReviewProvider:
@@ -70,7 +72,7 @@ class OpenAIReviewProvider:
         model: str,
         api_key: str,
         transport: OpenAIResponseTransport | None = None,
-        prompt_version: PromptVersion = PromptVersion.REVIEW_V1,
+        prompt_version: PromptVersion = PromptVersion.REVIEW_V2,
     ) -> None:
         self._api_key = api_key
         self._transport = transport or HttpxOpenAIResponseTransport()
@@ -104,8 +106,11 @@ class OpenAIReviewProvider:
                 "text": {
                     "format": {
                         "type": "json_schema",
-                        "name": "mensura_review_v1",
-                        "description": "A bounded read-only review of immutable Mensura context.",
+                        "name": "mensura_review_v2",
+                        "description": (
+                            "A bounded read-only review and write-isolated proposal draft from "
+                            "immutable Mensura context."
+                        ),
                         "strict": True,
                         "schema": _review_output_schema(),
                     }
@@ -131,6 +136,7 @@ class OpenAIReviewProvider:
             context=execution_context_summary(request.context_pack),
             warnings=output.warnings,
             recommended_next_steps=output.recommended_next_steps,
+            proposal_draft=output.proposal_draft,
         )
 
 
@@ -152,12 +158,50 @@ def _review_output_schema() -> dict[str, Any]:
                 "maxItems": 8,
                 "items": {"type": "string", "minLength": 1, "maxLength": 300},
             },
+            "proposalDraft": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "summary": {"type": "string", "minLength": 1, "maxLength": 1000},
+                    "rationale": {"type": "string", "minLength": 1, "maxLength": 2000},
+                    "fileChanges": {
+                        "type": "array",
+                        "maxItems": 16,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+                                "changeType": {
+                                    "type": "string",
+                                    "enum": ["create", "modify", "delete"],
+                                },
+                                "language": {
+                                    "anyOf": [
+                                        {"type": "string", "minLength": 1, "maxLength": 80},
+                                        {"type": "null"},
+                                    ]
+                                },
+                                "proposedText": {
+                                    "anyOf": [
+                                        {"type": "string", "maxLength": 32768},
+                                        {"type": "null"},
+                                    ]
+                                },
+                            },
+                            "required": ["path", "changeType", "language", "proposedText"],
+                        },
+                    },
+                },
+                "required": ["summary", "rationale", "fileChanges"],
+            },
         },
         "required": [
             "taskSummary",
             "interpretedIntent",
             "warnings",
             "recommendedNextSteps",
+            "proposalDraft",
         ],
     }
 

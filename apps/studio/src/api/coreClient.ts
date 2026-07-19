@@ -1,10 +1,13 @@
 import type {
+  ChangeProposal,
+  ChangeProposalCollection,
   ContextPackCollection,
   ContextPackManifest,
   CreateWorkspaceRequest,
   CreateTaskRequest,
   CreateContextPackRequest,
   CreateContextPackResponse,
+  CreateChangeProposalResponse,
   CreateRunRequest,
   HealthResponse,
   GuardRunRequest,
@@ -37,6 +40,9 @@ export interface CoreClient {
     workspaceId: string,
     input: CreateContextPackRequest,
   ): Promise<CreateContextPackResponse>;
+  createChangeProposal(runId: string): Promise<CreateChangeProposalResponse>;
+  approveChangeProposal(proposalId: string): Promise<ChangeProposal>;
+  rejectChangeProposal(proposalId: string): Promise<ChangeProposal>;
   createRun(taskId: string, input: CreateRunRequest): Promise<Run>;
   executeRun(runId: string, input: ExecuteRunRequest): Promise<Run>;
   configureOpenAIProvider(
@@ -54,6 +60,7 @@ export interface CoreClient {
     workspaceId: string,
     contextPackId: string,
   ): Promise<ContextPackManifest>;
+  getChangeProposal(proposalId: string): Promise<ChangeProposal>;
   getLatestGuardRun(workspaceId: string): Promise<GuardRunResponse>;
   getRun(runId: string): Promise<Run>;
   getTask(taskId: string): Promise<Task>;
@@ -65,6 +72,7 @@ export interface CoreClient {
     options?: { query?: string; extension?: string; limit?: number },
   ): Promise<VaultFileCollection>;
   listContextPacks(workspaceId: string): Promise<ContextPackCollection>;
+  listChangeProposals(workspaceId: string): Promise<ChangeProposalCollection>;
   listWorkspaces(): Promise<WorkspaceCollection>;
   listProviders(): Promise<ProviderCollection>;
 }
@@ -155,6 +163,12 @@ export function createCoreClient(options?: {
 
   return {
     baseUrl,
+    approveChangeProposal(proposalId) {
+      return request<ChangeProposal>(
+        `/api/v1/change-proposals/${encodeURIComponent(proposalId)}/approve`,
+        { method: "POST" },
+      );
+    },
     buildVaultInventory(workspaceId) {
       return request<VaultInventorySnapshot>(
         `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/vault/inventory`,
@@ -179,6 +193,12 @@ export function createCoreClient(options?: {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(input),
         },
+      );
+    },
+    createChangeProposal(runId) {
+      return request<CreateChangeProposalResponse>(
+        `/api/v1/runs/${encodeURIComponent(runId)}/change-proposals`,
+        { method: "POST" },
       );
     },
     createRun(taskId, input) {
@@ -230,6 +250,11 @@ export function createCoreClient(options?: {
         `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/context-packs/${encodeURIComponent(contextPackId)}`,
       );
     },
+    getChangeProposal(proposalId) {
+      return request<ChangeProposal>(
+        `/api/v1/change-proposals/${encodeURIComponent(proposalId)}`,
+      );
+    },
     getLatestGuardRun(workspaceId) {
       return request<GuardRunResponse>(
         `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/guard/runs/latest`,
@@ -268,6 +293,11 @@ export function createCoreClient(options?: {
         `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/context-packs`,
       );
     },
+    listChangeProposals(workspaceId) {
+      return request<ChangeProposalCollection>(
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/change-proposals`,
+      );
+    },
     listVaultFiles(workspaceId, options = {}) {
       const search = new URLSearchParams();
       if (options.query) search.set("query", options.query);
@@ -276,6 +306,12 @@ export function createCoreClient(options?: {
       const suffix = search.size ? `?${search.toString()}` : "";
       return request<VaultFileCollection>(
         `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/vault/files${suffix}`,
+      );
+    },
+    rejectChangeProposal(proposalId) {
+      return request<ChangeProposal>(
+        `/api/v1/change-proposals/${encodeURIComponent(proposalId)}/reject`,
+        { method: "POST" },
       );
     },
   };

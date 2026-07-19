@@ -56,7 +56,7 @@ class ProviderRegistry:
                 kind=ProviderKind.DETERMINISTIC,
                 configured=True,
                 model=None,
-                prompt_version=PromptVersion.REVIEW_V1,
+                prompt_version=PromptVersion.REVIEW_V2,
             ),
             ProviderDescriptor(
                 id=ProviderId.OPENAI,
@@ -64,7 +64,7 @@ class ProviderRegistry:
                 kind=ProviderKind.REAL,
                 configured=settings is not None and has_key,
                 model=settings.model if settings is not None else None,
-                prompt_version=PromptVersion.REVIEW_V1,
+                prompt_version=PromptVersion.REVIEW_V2,
             ),
         ]
         return ProviderCollection(items=items, total=len(items))
@@ -82,7 +82,7 @@ class ProviderRegistry:
             kind=ProviderKind.REAL,
             configured=True,
             model=settings.model,
-            prompt_version=PromptVersion.REVIEW_V1,
+            prompt_version=PromptVersion.REVIEW_V2,
         )
 
     def resolve(self, provider_id: str) -> ProviderAdapter:

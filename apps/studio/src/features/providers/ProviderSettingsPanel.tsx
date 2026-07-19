@@ -61,7 +61,7 @@ export function ProviderSettingsPanel() {
       <div className="provider-status-row">
         <div>
           <strong>Deterministic review</strong>
-          <span>Always available · review.v1</span>
+          <span>Always available · review.v2</span>
         </div>
         <span className="badge badge--passed">default</span>
       </div>

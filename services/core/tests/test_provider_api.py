@@ -34,7 +34,7 @@ def test_provider_discovery_is_redacted_and_deterministic_is_always_available() 
             "kind": "deterministic",
             "configured": True,
             "model": None,
-            "promptVersion": "review.v1",
+            "promptVersion": "review.v2",
         },
         {
             "id": "openai",
@@ -42,7 +42,7 @@ def test_provider_discovery_is_redacted_and_deterministic_is_always_available() 
             "kind": "real",
             "configured": False,
             "model": None,
-            "promptVersion": "review.v1",
+            "promptVersion": "review.v2",
         },
     ]
     assert "apiKey" not in response.text
@@ -76,7 +76,7 @@ def test_openai_configuration_is_validated_stored_and_never_returned() -> None:
         "kind": "real",
         "configured": True,
         "model": "gpt-5-mini",
-        "promptVersion": "review.v1",
+        "promptVersion": "review.v2",
     }
     assert "secret" not in configured.text
     assert credentials.openai_api_key == "sk-test-secret-that-is-long-enough"

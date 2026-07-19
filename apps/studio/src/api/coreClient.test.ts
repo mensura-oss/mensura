@@ -165,7 +165,7 @@ describe("Core client", () => {
           kind: "real",
           configured: true,
           model: "gpt-5-mini",
-          promptVersion: "review.v1",
+          promptVersion: "review.v2",
         }),
       ),
     );
@@ -328,6 +328,48 @@ describe("Core client", () => {
       3,
       `http://core.test/api/v1/workspaces/workspace%2Fid/context-packs/${encodeURIComponent(packId)}`,
       undefined,
+    );
+  });
+
+  it("creates, discovers, retrieves, and reviews change proposals", async () => {
+    const fetcher = vi.fn(() =>
+      Promise.resolve(Response.json({ items: [], total: 0 }, { status: 200 })),
+    );
+    const client = createCoreClient({ baseUrl: "http://core.test", fetcher });
+
+    await client.createChangeProposal("run/id");
+    expect(fetcher).toHaveBeenNthCalledWith(
+      1,
+      "http://core.test/api/v1/runs/run%2Fid/change-proposals",
+      { method: "POST" },
+    );
+
+    await client.listChangeProposals("workspace/id");
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      "http://core.test/api/v1/workspaces/workspace%2Fid/change-proposals",
+      undefined,
+    );
+
+    await client.getChangeProposal("proposal/id");
+    expect(fetcher).toHaveBeenNthCalledWith(
+      3,
+      "http://core.test/api/v1/change-proposals/proposal%2Fid",
+      undefined,
+    );
+
+    await client.approveChangeProposal("proposal/id");
+    expect(fetcher).toHaveBeenNthCalledWith(
+      4,
+      "http://core.test/api/v1/change-proposals/proposal%2Fid/approve",
+      { method: "POST" },
+    );
+
+    await client.rejectChangeProposal("proposal/id");
+    expect(fetcher).toHaveBeenNthCalledWith(
+      5,
+      "http://core.test/api/v1/change-proposals/proposal%2Fid/reject",
+      { method: "POST" },
     );
   });
 });

@@ -5,7 +5,7 @@
 - Mensura is an AGPL-3.0 open-source, local-first and self-hostable agentic development platform for professional developers and teams.
 - It combines a desktop workspace (Studio), orchestration (Core), project memory (Vault), quality and policy gates (Guard), extensions (Hub), and optional voice control (Voice).
 - The product emphasizes reproducible agent runs, visible diffs and logs, human approval, mandatory checks, open MCP interoperability, and user-managed model providers.
-- Current implementation status: the repository has a runnable pnpm workspace, tested shared contracts, a verified FastAPI Core service, and a Tauri/React Studio flow for workspace selection -> Vault inventory -> immutable context pack -> ready task -> context-bound queued run -> explicit deterministic or optional OpenAI BYOK execution, plus read-only repository inspection and manual lint/test Guard results. OpenAI keys use the OS credential backend, `review.v1` and structured outputs are code-bounded, and deterministic remains credential-free. Durable run/resource persistence, repository changes, additional providers, and orchestration remain unimplemented.
+- Current implementation status: the repository has a runnable pnpm workspace, tested shared contracts, a verified FastAPI Core service, and a Tauri/React Studio flow for workspace selection -> Vault inventory -> immutable context pack -> ready task -> context-bound queued run -> explicit deterministic or optional OpenAI BYOK execution -> separately persisted bounded change proposal -> approve/reject review. OpenAI keys use the OS credential backend, current `review.v2` output is code-bounded, `review.v1` remains versioned, and deterministic remains credential-free. Repository/Git inspection and Vault remain read-only; proposal approval never applies content. Durable resource persistence, isolated application/Guard evaluation, additional providers, and orchestration remain unimplemented.
 
 ## Source Documents Read
 
@@ -124,6 +124,7 @@
 
 ## Current Status
 
+- Work cycle 12 is complete in the working tree from clean baseline commit `64d6118`: successful schema-v2 runs can materialize one separately persisted bounded `ChangeProposal`, Studio can inspect file-level digest/content metadata and record a terminal approve/reject decision, and automated plus native acceptance prove no repository application occurs.
 - Work cycle 11 is complete in the working tree from clean baseline commit `9c7bba9`: Core/Studio support redacted local OpenAI BYOK configuration, explicit deterministic/real execution selection, OS-keyring secret storage, non-secret user config, `review.v1`, and bounded locally validated structured output without widening repository or tool capabilities.
 - Work cycle 10 is complete in the working tree from clean baseline commit `ac80ea8`: queued runs can be manually executed through an injected deterministic provider using only the persisted task/context pack, with atomic explicit transitions and bounded structured result/failure review in Studio.
 - Work cycle 9 is complete in the working tree from clean baseline commit `9d63e6e`: queued run creation requires an existing immutable context pack owned by the task workspace, persists the exact binding, and Studio shows the selected and stored execution context before any provider execution.
@@ -140,6 +141,76 @@
 - Repository risk history is too small for meaningful hotspot or bug-magnet analysis; current risk is specification breadth and premature scaffolding.
 
 ## Completed Work Log
+
+### 2026-07-19 — Start work cycle 12: write-isolated change proposals
+
+- Files changed: `docs/agent_memory.md`.
+- Baseline: confirmed a clean worktree at commit `64d6118`, re-read the twelfth-cycle request and current immutable context/provider execution boundaries, and repeated the all-history recon over 12 commits. The history has no fix/revert magnets; documentation, Studio transport/styling, and Core bootstrap/OpenAPI remain the main integration hotspots in this young repository.
+- Artifact boundary: introduce `ChangeProposal` as a resource independent of run execution state. It retains source run, task, workspace, exact `contextPackId`, provider, and prompt lineage while owning only its own review state.
+- Creation boundary: proposals may be created only from persisted `succeeded` runs with a valid bounded execution result. Generation must use that stored result/context lineage and cannot receive a workspace root, live filesystem/Git/subprocess/tool/write capability, or repository content beyond already persisted bounded evidence.
+- Content boundary: use a small schema with bounded summary/rationale and deterministically ordered file-change entries. File paths and proposed text are validated and bounded; binary bodies, raw unbounded patches, shell operations, and repository mutation remain absent.
+- Review boundary: allow only `proposed -> approved` or `proposed -> rejected`. Review timestamps and state belong to the proposal, and repeated/conflicting review actions return stable RFC 9457 problems without mutating the source run.
+- Studio boundary: add explicit proposal creation to successful-run views and a compact review panel with lineage, safe file-level content, status, and approve/reject actions. Copy must make clear that review does not apply changes.
+- Explicitly deferred: patch generation/application, repository writes, Git stage/commit/checkout/reset, provider tools, live repository rereads for proposal generation, Guard-on-proposal, background jobs, SSE, retries, orchestration, and durable process-restart persistence.
+- Follow-up: define and verify the shared v1 proposal contracts and explicit limits before implementing Core persistence or routes.
+
+### 2026-07-19 — Define and verify change-proposal contracts
+
+- Files changed: `packages/shared-types/src/{change-proposal,change-proposal.test,execution,execution.test,provider,provider.test,index}.ts` and `docs/agent_memory.md`.
+- Versioning: successful provider output advances to execution schema `2` and `review.v2`; the existing `review.v1` identifier remains defined rather than being silently reinterpreted. Schema v2 adds one immutable `proposalDraft` with summary, rationale, and bounded create/modify/delete suggestions.
+- Artifact contract: `ChangeProposal` schema `1` is separate from `Run` and records UUID identity, source run/task/workspace, exact context-pack digest, provider/prompt lineage, proposed/approved/rejected review state, timestamps, summary/rationale, and safe per-file metadata.
+- Content contract: file changes carry normalized path, closed change type, optional language, Core-derived before/after digests, bounded proposed text, stored/original byte counts, and an explicit truncation flag. Checked-in limits cap changes at 16, source text at 128 KiB, stored text at 8 KiB/file and 32 KiB/proposal.
+- Lifecycle: only proposal review state is mutable; the source run result remains a terminal immutable draft and contains no approval state. The intended Core transitions remain exactly `proposed -> approved | rejected`.
+- Verification: strict shared TypeScript checking and all 22 tests across eight files pass.
+- Follow-up: implement Pydantic parity, `review.v2` provider validation, an idempotent in-memory proposal repository, safe draft materialization, state transitions, RFC 9457 mappings, and versioned routes.
+
+### 2026-07-19 — Implement and verify Core change proposals
+
+- Files changed: `services/core/src/mensura_core/{models,provider_adapter,provider_prompts,openai_provider,provider_registry,change_proposal_models,change_proposal_repositories,change_proposal_service,exceptions,main}.py`, `services/core/src/mensura_core/api/{dependencies,problems,router}.py`, `services/core/src/mensura_core/api/routers/change_proposals.py`, `services/core/tests/{test_change_proposal_api,test_provider_api,test_run_execution,test_openapi}.py`, and `docs/agent_memory.md`.
+- Execution evolution: `review.v2` is a new code-controlled mapping that asks for a compact proposal draft grounded only in the persisted task and exact immutable context pack. OpenAI strict JSON Schema plus local Pydantic validation cover the draft; the deterministic provider emits an explicit empty-change draft instead of fabricating code. The adapter input still has no workspace root, filesystem, Git, shell, tool, or write capability.
+- Artifact architecture: `ChangeProposalService` depends only on read access to process-local task/run/context records and a dedicated proposal repository. It performs no provider call and receives no live repository capability. `InMemoryChangeProposalRepository` stores one idempotent artifact per run and supports atomic expected-state review replacement.
+- Materialization: only a persisted `succeeded` run with result schema `2` is eligible. Core rechecks task/run/context lineage, validates normalized relative paths and create/modify/delete semantics against the immutable manifest, derives before digests from captured entries and after digests from the complete proposal text, sorts changes deterministically, and never accepts binary text bodies.
+- Bounds: source proposal text is capped at 128 KiB. Stored text is UTF-8-safe truncated to 8 KiB/file and 32 KiB/artifact, while original/stored byte counts and truncation remain explicit; after digests cover the complete pre-truncation suggestion. Oversized aggregate output returns 413 and malformed semantic output returns 422.
+- API: added `POST /api/v1/runs/{run_id}/change-proposals`, `GET /api/v1/change-proposals/{proposal_id}`, `GET /api/v1/workspaces/{workspace_id}/change-proposals`, `POST /api/v1/change-proposals/{proposal_id}/approve`, and `POST /api/v1/change-proposals/{proposal_id}/reject`. Creation returns `{ proposal, created }` plus `Location`; repeated creation returns the exact stored artifact with `created: false`.
+- Errors/lifecycle: stable RFC 9457 types cover absent proposal, ineligible run, malformed provider proposal, oversized content, and invalid repeated/conflicting review. Only `proposed -> approved | rejected` is allowed; source run state never changes.
+- Verification: Ruff lint/format pass and all 68 Core tests pass with warnings treated as errors. Coverage proves successful/idempotent creation, get/list, immutable lineage/digests, no file mutation, queued/missing-run rejection, approve/reject terminality, UTF-8 truncation, aggregate oversize refusal, traversal refusal, updated provider schema, and OpenAPI surface/bounds.
+- Follow-up: add typed Studio client/query methods and a reusable successful-run proposal panel with creation, lineage/content review, explicit approve/reject actions, bounded display, and clear non-application copy.
+
+### 2026-07-19 — Implement and verify Studio proposal review
+
+- Files changed: `apps/studio/src/api/{coreClient,coreClient.test}.ts`, `apps/studio/src/app/queryClient.ts`, `apps/studio/src/test/render.tsx`, `apps/studio/src/features/change-proposals/{ChangeProposalPanel,ChangeProposalPanel.test}.tsx`, `apps/studio/src/features/runs/{RunExecutionPanel,RunInspector.test}.tsx`, `apps/studio/src/features/providers/{ProviderSettingsPanel,ProviderSettingsPanel.test}.tsx`, `apps/studio/src/styles.css`, and `docs/agent_memory.md`.
+- Client/query boundary: `CoreClient` now has typed create/get/list/approve/reject proposal operations with encoded identifiers. Workspace proposal collections and proposal resources have dedicated TanStack Query keys; no client-state store was introduced.
+- Resumability: every succeeded-run view queries the active context workspace's proposal collection and reopens the artifact matching that run. If none exists, one explicit create action calls the idempotent Core endpoint; a collection-read failure is shown without disabling the create/reopen action.
+- Review UI: a distinct write-isolated section shows artifact status, proposal/run/context/provider/prompt lineage, bounded summary/rationale, and a compact file list. File bodies remain collapsed in native disclosure controls, scroll within a fixed-height region, and show safe before/after digests, stored/original byte counts, and truncation badges.
+- Human control: proposed artifacts expose separate Approve proposal and Reject proposal buttons. A terminal decision removes both actions, displays the review timestamp, and explicitly states that no repository changes were applied. Copy before review also states that Mensura will not apply, stage, commit, or write suggestions.
+- Error/accessibility behavior: creation/review RFC 9457 problems stay inside the proposal section; pending buttons are disabled and labelled, disclosure controls retain keyboard focus styling, headings/labels are associated, and the rest of the run view remains usable.
+- Prompt visibility: provider discovery/default copy and run-selection fixtures now show `review.v2`, while proposal schema `1` and context-pack schema `1` remain independent.
+- Verification: strict Studio TypeScript checking, all 54 tests across 15 files, and the Vite production build pass. Tests cover existing-artifact reopen, bounded content disclosure, approval, creation/rejection, non-application copy, RFC 9457 creation failure, and exact client routes.
+- Follow-up: update user/developer documentation, run the full monorepo/native checks, then verify the live Core -> release Studio successful run -> proposal -> review path against a real local workspace without changing its files.
+
+### 2026-07-19 — Prepare cycle 12 documentation and acceptance
+
+- Files changed: `README.md`, `services/core/README.md`, `apps/studio/README.md`, and `docs/agent_memory.md`.
+- Documentation: root/Core/Studio guides now describe execution schema `2`, `review.v2`, the preserved meaning of `review.v1`, proposal schema/lifecycle/limits, all five endpoints, Studio discovery/review behavior, process-local storage, and explicit absence of patch/Git/repository application.
+- Automated acceptance plan: run root `pnpm check`, warning-strict Core Ruff/pytest, Rust formatting, `git diff --check`, and a production Tauri bundle. Confirm exact test/API operation counts and inspect the final diff for accidental capability widening.
+- Native acceptance plan: start a live process-local Core, create a real Mensura workspace/inventory/context/task/run through the HTTP API, execute deterministically, then use the release Studio UI to inspect the succeeded run, create/reopen its proposal, and record one review decision. Hash and read a selected workspace file before/after to prove the flow performed no repository write.
+- Safety boundary: native acceptance uses the deterministic provider, does not configure/transmit credentials, does not invoke Guard, and does not stage/commit/apply content. UI approval is expected to change only the in-memory proposal record.
+- Follow-up: complete automated/native acceptance, resolve any defects, then update current status, pending priorities, decisions, and final cycle journal with observed evidence.
+
+### 2026-07-19 — Complete work cycle 12: native write-isolation acceptance
+
+- Files changed: 40 tracked working-tree paths across root/Core/Studio READMEs, agent memory, shared proposal/execution/provider contracts, Core prompt/model/repository/service/router/problem/test modules, and Studio client/query/proposal/run/provider/style/test modules. No dependency or lockfile changed.
+- Contract/API result: execution output is schema `2` under current `review.v2`; proposal artifact schema is `1`; `review.v1` remains defined. Core OpenAPI now exposes 25 operations across 22 paths, including the five create/get/list/approve/reject proposal operations.
+- Automated verification: root `pnpm check` passes strict shared/Studio TypeScript, 22 shared tests, 54 Studio tests, shared/Studio production builds, and Rust `cargo check`. Core Ruff lint/format and all 68 warning-strict tests pass. `cargo fmt --check` and `git diff --check` pass.
+- Final review: tightened the missing-bound-context edge case so a succeeded run reports the actual immutable-pack retrievability failure under the stable run-not-eligible proposal problem instead of a misleading status-only message; the full Core suite remained green.
+- Packaging: release Rust binary, macOS `Mensura Studio.app`, and `Mensura Studio_0.1.0_aarch64.dmg` build successfully. The sandboxed DMG step could not run `hdiutil`; the exact approved production build succeeded outside that sandbox boundary.
+- Live seed: started real Uvicorn/Core with an injected acceptance-only deterministic adapter that retained the production no-root/no-filesystem provider request and returned one bounded README suggestion. Built a real Mensura inventory (173 included, 23 excluded; 156 text, 17 binary), captured one-file context `sha256:aa14db8...f3e4a`, created task `e1aa3a40-...`, and executed run `2fae3523-...` successfully with `review.v2`.
+- Native Studio acceptance: the release WebView loaded the successful run and exact immutable lineage, created proposal `e1af0951-...`, displayed `README.md` modify metadata with before digest `sha256:7d5993...9766f`, computed after digest `sha256:3368c1...9e6b2`, 108 stored/original bytes, untruncated bounded content, and explicit non-application copy. Approve changed only proposal state/timestamp; Core GET returned the same approved artifact.
+- Write-isolation evidence: `README.md` SHA-256 was `7d5993e6...b389766f` before creation/review and exactly the same afterward. Git status contained only this cycle's intended source/docs changes; no proposed text appeared in the repository and no Git command/application endpoint exists.
+- Acceptance note: the first native inspector attempt reused a stale accessibility index after a rerender and triggered the existing manual Guard action. Its configured Ruff/pytest checks passed and introduced no Git changes. The proposal flow was then repeated using fresh state before each action; this did not widen provider/proposal capabilities.
+- Cleanup: quit Studio, stopped Uvicorn cleanly, and removed both temporary acceptance scripts. No live key, provider config, proposal data, or background process remains after Core shutdown.
+- Explicitly deferred: proposal application, temporary worktrees/copies, patch/hunk editing, Guard-on-proposal, live repository writes, Git mutations, undo/rollback, durable proposal/audit storage, provider tools, background jobs, streaming/SSE, retries, and orchestration.
+- Next recommended slice: materialize an approved proposal only into an isolated temporary worktree/copy, run Guard there, and return safe diff/check metadata for a second explicit review—still without writing the user's live branch or invoking Git stage/commit.
 
 ### 2026-07-19 — Start work cycle 11: optional BYOK provider execution
 
@@ -893,26 +964,29 @@
 - Task lifecycle rules that require review before approval and support revision/retry paths.
 - Run lifecycle rules that require checking and an approval checkpoint before completion.
 - Runtime plugin manifest validation for supported types and permissions, semantic versions, duplicate permissions, and unsafe entry paths.
-- Automated coverage for shared lifecycle, plugin validation, Guard, Vault, context-pack, and provider/execution wire-contract behavior (20 passing tests).
-- Python 3.12 FastAPI Core service with enabled OpenAPI and 20 implemented HTTP operations across 17 paths.
+- Automated coverage for shared lifecycle, plugin validation, Guard, Vault, context-pack, provider/execution, and change-proposal wire-contract behavior (22 passing tests).
+- Python 3.12 FastAPI Core service with enabled OpenAPI and 25 implemented HTTP operations across 22 paths.
 - Workspace creation/listing with exact-root conflict detection in a process-local repository.
 - Task creation/retrieval tied to an existing workspace; created tasks begin in `ready` status.
 - Context-bound run creation/retrieval; every created run requires and stores an immutable same-workspace context pack and starts `queued`.
 - Manually triggered explicit-provider run execution with an atomic `queued -> running -> succeeded | failed` state machine, persisted transition timestamps, provider/prompt identity, bounded duration, and validated structured result/failure.
 - Replaceable provider registry/adapter boundaries with credential-free deterministic and optional OpenAI Responses implementations; both receive only persisted task data and the exact immutable context-pack manifest, with no live workspace path, repository/filesystem/Git/subprocess/tool capability, or write operation.
 - Local BYOK configuration with write-only API keys in the operating-system credential backend, non-secret model settings in schema-v1 user config, and redacted provider discovery.
+- Isolated change-proposal schema `1`, idempotent per-run persistence, immutable run/task/workspace/context/provider/prompt lineage, safe create/modify/delete metadata, Core-derived before/after digests, UTF-8 truncation metadata, and terminal proposed -> approved/rejected transitions.
+- Five workspace/run/proposal-scoped API operations with stable RFC 9457 problems for missing/ineligible/malformed/oversized/already-reviewed proposals and no request body capable of supplying arbitrary mutable selections.
 - RFC 9457 `application/problem+json` responses for resource misses, conflicts, request validation, framework HTTP errors, and generic internal failures.
 - CamelCase JSON contracts aligned with TypeScript Workspace/Task ownership and documented in OpenAPI.
-- Sixty-three passing Core service/runner/API/OpenAPI/Git/Vault/context-pack/provider/run-execution tests plus successful real-Uvicorn repository inspection, Guard execution, inventory, filtering, preview retrieval, immutable pack creation/get/list, bound run creation, and manual structured execution.
+- Sixty-eight passing Core service/runner/API/OpenAPI/Git/Vault/context-pack/provider/run-execution/change-proposal tests plus successful real-Uvicorn repository inspection, Guard execution, inventory, filtering, preview retrieval, immutable pack creation/get/list, bound run creation, structured execution, proposal materialization, and review.
 - Tauri 2 desktop Studio with React 19, Vite 8, a single resizable window, desktop app icons, CSP, and a local-Core-only native HTTP capability.
 - TanStack Query-backed Core health polling, workspace list/create behavior, task lookup, and run lookup with explicit loading, empty, success, connection-error, and RFC 9457 error states.
 - Shared Health, workspace transport, and Problem Details contracts aligned with Core's camelCase responses and nullable fields.
-- Fifty passing Studio client/component/acceptance tests and successful native release binary, macOS `.app`, and DMG builds.
+- Fifty-four passing Studio client/component/acceptance tests and successful native release binary, macOS `.app`, and DMG builds.
 - Verified live desktop connectivity from the release Tauri WebView to Core health and workspace endpoints.
 - Persisted active workspace selection with stale-ID reconciliation after Core restart.
 - Accessible active-workspace task creation with client validation, RFC 9457 failures, value preservation on failure, and immediate ready-task details.
 - Reusable queued-run creation from both created and looked-up tasks, with explicit immutable pack selection, task/run query refresh, and immediate bound-run details.
 - Reusable manual Execute action for created and looked-up queued runs, visible deterministic/OpenAI selection, pending/running state, terminal polling, provider/prompt identity, compact structured result/failure review, and RFC 9457 plus persisted-failure reconciliation.
+- Reusable successful-run proposal panel with process-local discovery/reopen, idempotent creation, immutable lineage, collapsed bounded file suggestions, digest/byte/truncation metadata, explicit approve/reject, and clear no-application states.
 - Compact Local BYOK Studio panel with redacted discovery, accessible model/password validation, value preservation on failure, and key clearing after successful OS-credential save.
 - Verified live Core and native Studio workspace -> Vault inventory -> immutable context pack -> ready task -> context-bound queued run POST/GET sequence.
 - Isolated shared repository summary/diff-metadata contracts with no patch or file-content fields.
@@ -934,12 +1008,13 @@
 - Workspace-scoped context-pack create/list/get endpoints with stable RFC 9457 problems for invalid/excluded/changed files, oversized packs, absent inventory, and missing manifests.
 - Compact active-workspace Studio builder with explicit pre-creation selection, bounded-size estimates, native checkbox labels, idempotent creation, process-local pack library, and locked manifest review without preview-body dumping.
 - Verified live release-Studio -> Core -> real Mensura inventory -> selected text/binary evidence -> deterministic pack -> read-only get/list/reopen flow; native UI displayed stable pack/per-file digests and repeating creation reopened the same id.
+- Verified live release-Studio -> successful context-bound run -> separate file-level proposal -> approved review record; Core/UI agreed and the selected README digest was identical before and after.
 
 ## Pending Tasks
 
 ### MVP
 
-1. Extend the observable flow from reviewed context -> write-isolated change proposal/safe diff metadata -> Guard -> review -> approve/reject without bypassing the immutable binding.
+1. Materialize an approved proposal only in an isolated temporary worktree/copy, run Guard there, and expose safe diff/check metadata for a second explicit review without touching the live branch.
 2. Add Docker Compose only for dependencies required by the working flow, plus CI for format, typecheck, tests, and builds.
 3. Replace temporary in-memory adapters with durable storage where acceptance criteria require restart-safe history.
 
@@ -1067,10 +1142,19 @@
 
 ### Optional OpenAI BYOK with OS credential isolation
 
-- Decision: retain deterministic as the always-available default, resolve one explicit provider per execution, add OpenAI Responses as the sole optional real adapter, store its key through Python `keyring`, persist only the model in local user config, and pin provider instructions/shape to code-controlled `review.v1`.
+- Decision: retain deterministic as the always-available default, resolve one explicit provider per execution, add OpenAI Responses as the sole optional real adapter, store its key through Python `keyring`, persist only the model in local user config, and pin provider instructions/shape to code-controlled version mappings. `review.v1` retains its original no-file-modification contract; `review.v2` is the current bounded proposal-draft contract.
 - Reason: BYOK must prove real model variability without turning Mensura into a credential-owning cloud service or weakening the already verified immutable-input/no-write boundary. OS credential storage avoids plaintext repository/workspace secrets, while a small direct HTTP adapter avoids SDK-specific object leakage and keeps the wire behavior auditable.
 - Alternatives considered: environment-variable-only keys, plaintext Tauri/localStorage config, sending credentials with every execute request, auto-fallback after real-provider failure, multiple vendors, arbitrary API endpoints, upstream prompt objects, and provider tools. Rejected or deferred because they impair usability/security, obscure selected-provider audit history, or widen execution beyond this vertical slice.
-- Consequences: Studio can write but never read a key; local keyring availability becomes an optional configuration dependency; OpenAI failures are explicit and never silently change provider; `review.v1`, model, provider kind, and adapter identity persist on the run; real requests use `store: false`, no tools, bounded output and two-stage structured validation; a paid live call still requires the user to supply a key.
+- Consequences: Studio can write but never read a key; local keyring availability becomes an optional configuration dependency; OpenAI failures are explicit and never silently change provider; exact prompt version, model, provider kind, and adapter identity persist on the run; real requests use `store: false`, no tools, bounded output and two-stage structured validation; a paid live call still requires the user to supply a key.
+
+### Independently reviewed, write-isolated change proposals
+
+- Decision: capture a bounded immutable proposal draft in successful execution schema `2`, then materialize one independent `ChangeProposal` schema `1` artifact per run. Keep review state exclusively on the proposal and permit only `proposed -> approved | rejected`.
+- Reason: provider variability must be validated while the run is executing, but human review is a later mutable audit decision. Separating the terminal draft from the proposal prevents approval state from mutating run truth, avoids a second provider/network call, and preserves exact task/run/context/provider/prompt lineage.
+- Content boundary: Core accepts at most 16 create/modify/delete suggestions, validates normalized paths against the immutable manifest, derives before/after SHA-256 metadata itself, refuses binary text, caps source text at 128 KiB, and UTF-8 truncates stored text to 8 KiB/file and 32 KiB/artifact with explicit metadata.
+- Capability boundary: `ChangeProposalService` depends only on process-local task/run/context repositories plus its own store. It receives no Workspace/root path, provider transport, live filesystem/Git/subprocess/tool/write capability, and approve/reject never calls Guard or changes the run/repository.
+- Alternatives considered: changing `review.v1` in place, calling the model again on proposal POST, accepting proposal bodies from Studio, embedding mutable review state on Run, storing raw patches, and applying changes directly after approval. Rejected because they break prompt compatibility, reproducibility, authority boundaries, boundedness, or the explicit no-write requirement.
+- Consequences: deterministic execution truthfully yields an empty-change draft; useful code suggestions require a capable configured provider. Proposal creation is idempotent but process-local, approval is an audit decision rather than application authorization, and a later slice must introduce an isolated apply/Guard/review boundary before any live repository change is considered.
 
 ## Open Questions
 

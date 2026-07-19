@@ -21,6 +21,9 @@ Description = Annotated[str, StringConstraints(strip_whitespace=True, max_length
 BoundedSummary = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)
 ]
+BoundedRationale = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)
+]
 BoundedMessage = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=300)
 ]
@@ -107,6 +110,13 @@ class ProviderKind(StrEnum):
 
 class PromptVersion(StrEnum):
     REVIEW_V1 = "review.v1"
+    REVIEW_V2 = "review.v2"
+
+
+class ChangeProposalChangeType(StrEnum):
+    CREATE = "create"
+    MODIFY = "modify"
+    DELETE = "delete"
 
 
 class HealthResponse(ApiModel):
@@ -209,13 +219,27 @@ class RunExecutionContextSummary(ResourceModel):
     languages: Annotated[tuple[LanguageName, ...], Field(max_length=32)]
 
 
+class ChangeProposalDraftFileChange(ResourceModel):
+    path: Annotated[str, StringConstraints(min_length=1, max_length=4096)]
+    change_type: ChangeProposalChangeType
+    language: LanguageName | None
+    proposed_text: Annotated[str, StringConstraints(max_length=32_768)] | None
+
+
+class ChangeProposalDraft(ResourceModel):
+    summary: BoundedSummary
+    rationale: BoundedRationale
+    file_changes: Annotated[tuple[ChangeProposalDraftFileChange, ...], Field(max_length=16)]
+
+
 class RunExecutionResult(ResourceModel):
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     task_summary: BoundedSummary
     interpreted_intent: BoundedSummary
     context: RunExecutionContextSummary
     warnings: Annotated[tuple[BoundedMessage, ...], Field(max_length=8)]
     recommended_next_steps: Annotated[tuple[BoundedMessage, ...], Field(min_length=1, max_length=8)]
+    proposal_draft: ChangeProposalDraft
 
 
 class RunExecutionFailureCode(StrEnum):

@@ -91,7 +91,11 @@ class FixtureOpenAITransport:
         self.output_text = output_text or (
             '{"taskSummary":"Real review summary.",'
             '"interpretedIntent":"Review the exact immutable evidence.",'
-            '"warnings":[],"recommendedNextSteps":["Review this model result."]}'
+            '"warnings":[],"recommendedNextSteps":["Review this model result."],'
+            '"proposalDraft":{"summary":"Propose one bounded edit.",'
+            '"rationale":"The captured source supports the suggestion.",'
+            '"fileChanges":[{"path":"src/example.py","changeType":"modify",'
+            '"language":"Python","proposedText":"print(\\"proposed\\")\\n"}]}}'
         )
         self.api_key: str | None = None
         self.payload: object | None = None
@@ -205,16 +209,17 @@ def test_execute_queued_run_persists_explicit_transitions_and_result() -> None:
             "adapterId": "deterministic-review",
             "adapterVersion": "1.0.0",
             "model": None,
-            "promptVersion": "review.v1",
+            "promptVersion": "review.v2",
         }
         assert run["execution"]["durationMs"] >= 0
         assert run["execution"]["failure"] is None
         result = run["execution"]["result"]
-        assert result["schemaVersion"] == "1"
+        assert result["schemaVersion"] == "2"
         assert result["interpretedIntent"].startswith("Summarize")
         assert result["context"]["contextPackId"] == manifest.id
         assert result["context"]["languages"] == ["Python"]
         assert result["recommendedNextSteps"]
+        assert result["proposalDraft"]["fileChanges"] == []
         assert provider.request is not None
         assert provider.request.context_pack == manifest
         serialized_request = provider.request.model_dump_json()
@@ -368,9 +373,12 @@ def test_openai_selection_uses_local_config_and_records_prompt_version() -> None
         "adapterId": "openai-responses",
         "adapterVersion": "1.0.0",
         "model": "gpt-5-mini",
-        "promptVersion": "review.v1",
+        "promptVersion": "review.v2",
     }
     assert run["execution"]["result"]["taskSummary"] == "Real review summary."
+    assert run["execution"]["result"]["proposalDraft"]["fileChanges"][0]["path"] == (
+        "src/example.py"
+    )
     assert run["execution"]["result"]["context"]["contextPackId"] == manifest.id
     assert transport.api_key == "sk-test-secret-that-is-long-enough"
     assert isinstance(transport.payload, dict)
