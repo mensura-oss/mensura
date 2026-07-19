@@ -1,6 +1,6 @@
 # Mensura Studio
 
-Mensura Studio is the Tauri 2 desktop client for the local Mensura Core service. The current cycle intentionally implements only a stable shell and the smallest read/create HTTP surface: health, workspace listing/creation, and task/run lookup.
+Mensura Studio is the Tauri 2 desktop client for the local Mensura Core service. The current vertical slice supports selecting a workspace, creating a task, and recording a queued placeholder run while keeping orchestration explicitly out of scope.
 
 ## Requirements
 
@@ -48,9 +48,11 @@ pnpm studio:build
 
 - Static developer-tool shell with sidebar, top bar, and content grid
 - Core liveness polling and manual refresh
-- Workspace list, empty state, and create form
-- Task lookup by UUID
-- Run lookup by UUID
+- Workspace list, create form, selectable active workspace, and restored local selection
+- Task creation for the active workspace plus task lookup by UUID
+- Queued run creation from created or looked-up tasks plus run lookup by UUID
 - RFC 9457 Problem Details and connection errors shown without losing server fields
 
-The app does not start Core itself and Core data remains in memory. Monaco, terminals, repository navigation, task/run creation, live run events, Kanban, Vault, Guard, Hub, plugins, authentication, and settings are intentionally deferred.
+The active workspace ID persists in localStorage, but Core data remains in memory. Restarting Core removes its workspaces/tasks/runs, and Studio clears a restored workspace selection when that ID no longer exists.
+
+The app does not start Core itself. A created run remains `queued`; no worker consumes it. Monaco, terminals, repository navigation, task/run lists, live run events, Kanban, Vault, Guard, Hub, plugins, authentication, and settings are intentionally deferred.

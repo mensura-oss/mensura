@@ -2,7 +2,7 @@
 
 Mensura is an open-source, local-first and self-hostable agentic development platform. It is intended to combine a desktop developer workspace, controlled agent execution, durable project memory, mandatory quality gates, and an open plugin ecosystem.
 
-The repository is at the foundation stage. The current runnable components are `@mensura/shared-types`, the minimal Python 3.12 Mensura Core HTTP API, and the Tauri/React Mensura Studio shell. Core currently stores workspaces, tasks, and queued placeholder runs in process memory; it does not orchestrate agents or persist data across restarts.
+The repository is at the foundation stage. The current runnable components are `@mensura/shared-types`, the minimal Python 3.12 Mensura Core HTTP API, and the Tauri/React Mensura Studio shell. Studio can select a workspace, create a ready task, and create a queued placeholder run. Core still stores these resources only in process memory; it does not orchestrate agents or persist data across restarts.
 
 ## Repository map
 

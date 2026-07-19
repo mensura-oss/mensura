@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from "react";
+import type { WorkspaceCollection } from "@mensura/shared-types";
+import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useCoreClient } from "../../api/CoreClientProvider";
@@ -8,7 +9,13 @@ import { Panel } from "../../components/Panel";
 import { ProblemDetailsView } from "../../components/ProblemDetailsView";
 import { formatTimestamp } from "../../components/ResourceDetails";
 
-export function WorkspacesPanel() {
+export function WorkspacesPanel({
+  activeWorkspaceId,
+  onActiveWorkspaceChange,
+}: {
+  activeWorkspaceId: string | null;
+  onActiveWorkspaceChange(workspaceId: string | null): void;
+}) {
   const client = useCoreClient();
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
@@ -19,12 +26,41 @@ export function WorkspacesPanel() {
   });
   const createWorkspace = useMutation({
     mutationFn: () => client.createWorkspace({ name, rootPath }),
-    onSuccess: async () => {
+    onSuccess: (workspace) => {
       setName("");
       setRootPath("");
-      await queryClient.invalidateQueries({ queryKey: queryKeys.workspaces });
+      queryClient.setQueryData<WorkspaceCollection>(
+        queryKeys.workspaces,
+        (current) => {
+          if (!current) {
+            return { items: [workspace], total: 1 };
+          }
+          if (current.items.some((item) => item.id === workspace.id)) {
+            return current;
+          }
+          const items = [...current.items, workspace];
+          return { items, total: items.length };
+        },
+      );
+      onActiveWorkspaceChange(workspace.id);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workspaces });
     },
   });
+
+  useEffect(() => {
+    if (
+      workspaces.isSuccess &&
+      activeWorkspaceId &&
+      !workspaces.data.items.some((workspace) => workspace.id === activeWorkspaceId)
+    ) {
+      onActiveWorkspaceChange(null);
+    }
+  }, [
+    activeWorkspaceId,
+    onActiveWorkspaceChange,
+    workspaces.data,
+    workspaces.isSuccess,
+  ]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -82,19 +118,37 @@ export function WorkspacesPanel() {
           </EmptyState>
         ) : null}
         {workspaces.isSuccess && workspaces.data.items.length > 0 ? (
-          <ul className="workspace-cards">
-            {workspaces.data.items.map((workspace) => (
-              <li key={workspace.id}>
-                <div>
-                  <strong>{workspace.name}</strong>
-                  <code>{workspace.rootPath}</code>
-                </div>
-                <time dateTime={workspace.createdAt}>
-                  {formatTimestamp(workspace.createdAt)}
-                </time>
-              </li>
-            ))}
-          </ul>
+          <>
+            {!activeWorkspaceId ? (
+              <EmptyState>Select a workspace to enable task creation.</EmptyState>
+            ) : null}
+            <ul className="workspace-cards">
+              {workspaces.data.items.map((workspace) => {
+                const isActive = workspace.id === activeWorkspaceId;
+                return (
+                  <li key={workspace.id}>
+                    <button
+                      className="workspace-card"
+                      type="button"
+                      aria-pressed={isActive}
+                      onClick={() => onActiveWorkspaceChange(workspace.id)}
+                    >
+                      <div>
+                        <span className="workspace-card__title">
+                          <strong>{workspace.name}</strong>
+                          {isActive ? <span className="badge">Active</span> : null}
+                        </span>
+                        <code>{workspace.rootPath}</code>
+                      </div>
+                      <time dateTime={workspace.createdAt}>
+                        {formatTimestamp(workspace.createdAt)}
+                      </time>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
         ) : null}
       </div>
     </Panel>

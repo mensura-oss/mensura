@@ -1,0 +1,99 @@
+import type { Run, Task, Workspace } from "@mensura/shared-types";
+import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { createTestClient, renderWithAppProviders } from "../test/render";
+import { App } from "./App";
+import { ACTIVE_WORKSPACE_STORAGE_KEY } from "./useActiveWorkspaceId";
+
+const workspace: Workspace = {
+  id: "5ca252af-76f4-4aed-9718-ff97b610ce90",
+  name: "Mensura",
+  rootPath: "/code/mensura",
+  createdAt: "2026-07-19T11:00:00Z",
+  updatedAt: "2026-07-19T11:00:00Z",
+};
+
+const task: Task = {
+  id: "20c74e92-d9fc-4e65-bfbb-4924cc181ed1",
+  workspaceId: workspace.id,
+  title: "Deliver the first task flow",
+  description: "Create a task and queued run from Studio.",
+  status: "ready",
+  assignedRole: null,
+  createdAt: "2026-07-19T12:00:00Z",
+  updatedAt: "2026-07-19T12:00:00Z",
+};
+
+const run: Run = {
+  id: "9dc58c91-105d-43af-95cb-32e546ce4c9f",
+  taskId: task.id,
+  status: "queued",
+  startedAt: null,
+  finishedAt: null,
+  createdAt: "2026-07-19T12:05:00Z",
+  updatedAt: "2026-07-19T12:05:00Z",
+};
+
+describe("App task flow", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("creates and selects a workspace, creates a task, and starts a queued run", async () => {
+    const user = userEvent.setup();
+    let workspaces: readonly Workspace[] = [];
+    const createWorkspace = vi.fn(() => {
+      workspaces = [workspace];
+      return Promise.resolve(workspace);
+    });
+    const createTask = vi.fn(() => Promise.resolve(task));
+    const createRun = vi.fn(() => Promise.resolve(run));
+    const client = createTestClient({
+      createRun,
+      createTask,
+      createWorkspace,
+      getHealth: () =>
+        Promise.resolve({
+          status: "ok",
+          service: "mensura-core",
+          version: "0.1.0",
+        }),
+      getRun: () => Promise.resolve(run),
+      getTask: () => Promise.resolve(task),
+      listWorkspaces: () =>
+        Promise.resolve({ items: workspaces, total: workspaces.length }),
+    });
+
+    renderWithAppProviders(<App />, client);
+
+    await user.type(screen.getByLabelText("Name"), workspace.name);
+    await user.type(screen.getByLabelText("Root path"), workspace.rootPath);
+    await user.click(screen.getByRole("button", { name: "Create workspace" }));
+
+    expect(await screen.findByText("Active workspace")).toBeVisible();
+    expect(window.localStorage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY)).toBe(
+      workspace.id,
+    );
+
+    await user.type(screen.getByLabelText("Title"), task.title);
+    await user.type(screen.getByLabelText("Description"), task.description);
+    await user.click(screen.getByRole("button", { name: "Create task" }));
+
+    expect(await screen.findByText("Task created and ready.")).toBeVisible();
+    expect(screen.getByText(task.title)).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Start run" }));
+
+    expect(await screen.findByText("Run created and queued.")).toBeVisible();
+    expect(screen.getByText(run.id)).toBeVisible();
+    expect(createWorkspace).toHaveBeenCalledTimes(1);
+    expect(createTask).toHaveBeenCalledWith({
+      workspaceId: workspace.id,
+      title: task.title,
+      description: task.description,
+    });
+    expect(createRun).toHaveBeenCalledWith(task.id);
+  });
+});

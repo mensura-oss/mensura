@@ -1,5 +1,6 @@
 import type {
   CreateWorkspaceRequest,
+  CreateTaskRequest,
   HealthResponse,
   ProblemDetails,
   Run,
@@ -17,6 +18,8 @@ export type CoreFetcher = (
 
 export interface CoreClient {
   readonly baseUrl: string;
+  createRun(taskId: string): Promise<Run>;
+  createTask(input: CreateTaskRequest): Promise<Task>;
   createWorkspace(input: CreateWorkspaceRequest): Promise<Workspace>;
   getHealth(): Promise<HealthResponse>;
   getRun(runId: string): Promise<Run>;
@@ -110,6 +113,19 @@ export function createCoreClient(options?: {
 
   return {
     baseUrl,
+    createRun(taskId) {
+      return request<Run>(
+        `/api/v1/tasks/${encodeURIComponent(taskId)}/runs`,
+        { method: "POST" },
+      );
+    },
+    createTask(input) {
+      return request<Task>("/api/v1/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+    },
     createWorkspace(input) {
       return request<Workspace>("/api/v1/workspaces", {
         method: "POST",

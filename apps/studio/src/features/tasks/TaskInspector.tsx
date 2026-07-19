@@ -6,10 +6,7 @@ import { queryKeys } from "../../app/queryClient";
 import { EmptyState, LoadingState } from "../../components/AsyncState";
 import { Panel } from "../../components/Panel";
 import { ProblemDetailsView } from "../../components/ProblemDetailsView";
-import {
-  formatTimestamp,
-  ResourceDetails,
-} from "../../components/ResourceDetails";
+import { TaskDetails } from "./TaskDetails";
 
 export function TaskInspector() {
   const client = useCoreClient();
@@ -53,18 +50,7 @@ export function TaskInspector() {
       {task.isPending && taskId ? <LoadingState>Loading task…</LoadingState> : null}
       {task.isError ? <ProblemDetailsView error={task.error} /> : null}
       {task.isSuccess ? (
-        <ResourceDetails
-          items={[
-            { label: "ID", value: <code>{task.data.id}</code> },
-            { label: "Workspace", value: <code>{task.data.workspaceId}</code> },
-            { label: "Title", value: task.data.title },
-            { label: "Description", value: task.data.description || "—" },
-            { label: "Status", value: <span className="badge">{task.data.status}</span> },
-            { label: "Assigned role", value: task.data.assignedRole ?? "—" },
-            { label: "Created", value: formatTimestamp(task.data.createdAt) },
-            { label: "Updated", value: formatTimestamp(task.data.updatedAt) },
-          ]}
-        />
+        <TaskDetails task={task.data} />
       ) : null}
     </Panel>
   );

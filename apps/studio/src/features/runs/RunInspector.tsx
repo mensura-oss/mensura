@@ -6,10 +6,7 @@ import { queryKeys } from "../../app/queryClient";
 import { EmptyState, LoadingState } from "../../components/AsyncState";
 import { Panel } from "../../components/Panel";
 import { ProblemDetailsView } from "../../components/ProblemDetailsView";
-import {
-  formatTimestamp,
-  ResourceDetails,
-} from "../../components/ResourceDetails";
+import { RunDetails } from "./RunDetails";
 
 export function RunInspector() {
   const client = useCoreClient();
@@ -52,19 +49,7 @@ export function RunInspector() {
       {!runId ? <EmptyState>Enter a run ID to inspect Core state.</EmptyState> : null}
       {run.isPending && runId ? <LoadingState>Loading run…</LoadingState> : null}
       {run.isError ? <ProblemDetailsView error={run.error} /> : null}
-      {run.isSuccess ? (
-        <ResourceDetails
-          items={[
-            { label: "ID", value: <code>{run.data.id}</code> },
-            { label: "Task", value: <code>{run.data.taskId}</code> },
-            { label: "Status", value: <span className="badge">{run.data.status}</span> },
-            { label: "Started", value: formatTimestamp(run.data.startedAt) },
-            { label: "Finished", value: formatTimestamp(run.data.finishedAt) },
-            { label: "Created", value: formatTimestamp(run.data.createdAt) },
-            { label: "Updated", value: formatTimestamp(run.data.updatedAt) },
-          ]}
-        />
-      ) : null}
+      {run.isSuccess ? <RunDetails run={run.data} /> : null}
     </Panel>
   );
 }

@@ -10,6 +10,8 @@ export function createTestClient(
 ): CoreClient {
   return {
     baseUrl: "http://127.0.0.1:8000",
+    createRun: () => Promise.reject(new Error("Not implemented in test")),
+    createTask: () => Promise.reject(new Error("Not implemented in test")),
     createWorkspace: () => Promise.reject(new Error("Not implemented in test")),
     getHealth: () => Promise.reject(new Error("Not implemented in test")),
     getRun: () => Promise.reject(new Error("Not implemented in test")),

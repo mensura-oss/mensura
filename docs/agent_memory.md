@@ -5,7 +5,7 @@
 - Mensura is an AGPL-3.0 open-source, local-first and self-hostable agentic development platform for professional developers and teams.
 - It combines a desktop workspace (Studio), orchestration (Core), project memory (Vault), quality and policy gates (Guard), extensions (Hub), and optional voice control (Voice).
 - The product emphasizes reproducible agent runs, visible diffs and logs, human approval, mandatory checks, open MCP interoperability, and user-managed model providers.
-- Current implementation status: the repository has a runnable pnpm workspace, tested shared contracts, a verified minimal Mensura Core FastAPI service, and a verified Tauri/React Studio shell connected to Core. Persistence and agent execution remain unimplemented.
+- Current implementation status: the repository has a runnable pnpm workspace, tested shared contracts, a verified minimal Mensura Core FastAPI service, and a verified Tauri/React Studio flow for workspace selection -> ready task -> queued run. Durable server persistence and agent execution remain unimplemented.
 
 ## Source Documents Read
 
@@ -124,7 +124,7 @@
 
 ## Current Status
 
-- Work cycle 3 implementation and verification are complete; its logical Git commit is pending.
+- Work cycle 4 implementation and verification are complete; its logical Git commit is pending.
 - Core v1 is verified under Python 3.12 with versioned resource routes, predictable errors, replaceable in-memory storage, OpenAPI, and tests. Orchestration and database integration remain explicitly deferred.
 - Git history: the initial license commit plus the committed foundation from work cycle 1; no product implementation history is deep enough for meaningful code hotspots yet.
 - Documentation: ten project specifications, the root README, and this execution journal are tracked.
@@ -135,6 +135,63 @@
 - Repository risk history is too small for meaningful hotspot or bug-magnet analysis; current risk is specification breadth and premature scaffolding.
 
 ## Completed Work Log
+
+### 2026-07-19 15:23 MSK — Start work cycle 4: first Studio task flow
+
+- Files changed: `docs/agent_memory.md`.
+- Audit: confirmed a clean worktree at `d0e802a`; re-read the cycle-3 Studio shell/client/query structure, workspace/task/run shared types, Core task/run routers and service methods, and current run documentation. No Mensura-specific external memory entry exists, so repository contracts remain authoritative.
+- Planned vertical flow: persist one active workspace ID in localStorage; select or auto-select a created workspace; create a ready task with the existing `POST /api/v1/tasks`; start a queued run with the existing `POST /api/v1/tasks/{task_id}/runs`; seed/refetch the matching TanStack Query entries; show both resources immediately.
+- State decision before implementation: active workspace ID is small client state owned by `App` through a focused persistence hook and passed by props. Server resources remain in TanStack Query. No global state library or optimistic server record is introduced.
+- Mutation decision before implementation: add minimal `CreateTaskRequest` transport typing; use one reusable start-run component for newly created and looked-up tasks; preserve form values after any server failure; use client-side trimmed-title validation plus native form constraints and accessible error associations.
+- Explicitly deferred: task/run lists, task status mutation, orchestration workers, run events/SSE, Core process supervision, durable Core storage, repository/editor/terminal/Kanban UI, Vault, Guard, Hub/plugins, routing, authentication, and endpoint settings.
+- Follow-up: implement and verify active workspace persistence/selection first, without task or run controls, then record that boundary before continuing.
+
+### 2026-07-19 — Implement active workspace selection and persistence
+
+- Files changed: `apps/studio/src/app/{App,useActiveWorkspaceId}.tsx`, `apps/studio/src/app/useActiveWorkspaceId.test.tsx`, `apps/studio/src/features/workspaces/WorkspacesPanel.tsx`, its test, `apps/studio/src/styles.css`, `apps/studio/src/test/setup.ts`, and `docs/agent_memory.md`.
+- Implemented: selectable workspace cards with `aria-pressed`; visible active badge; guidance when workspaces exist but none is selected; localStorage restoration under `mensura:active-workspace-id`; automatic selection after successful workspace creation; and removal of a restored selection when Core no longer returns that workspace.
+- Resilience: localStorage read/write failures do not break the current Studio session. Query cache is updated with a created workspace before selection, preventing the reconciliation effect from clearing a valid new ID while the list refetches.
+- Test issue resolved: Studio tests had relied on implicit Testing Library cleanup, which was not registered in the Vitest environment. Added explicit `afterEach(cleanup)` so component tests cannot interact with stale DOM from a previous test.
+- Verification: Studio strict TypeScript checking passed; all 9 Studio tests across 6 files passed, including persistence, selection, auto-selection, and the previous shell/client behavior.
+- Follow-up: add the typed task-create client method and active-workspace task form. Do not add run creation until task success/error behavior is independently verified and journaled.
+
+### 2026-07-19 — Implement active-workspace task creation
+
+- Files changed: `packages/shared-types/src/api.ts`, `packages/shared-types/package.json`, `apps/studio/src/api/{coreClient,coreClient.test}.ts`, `apps/studio/src/test/render.tsx`, `apps/studio/src/features/tasks/{TaskCreationPanel,TaskCreationPanel.test,TaskDetails,TaskInspector}.tsx`, `apps/studio/src/app/App.tsx`, `apps/studio/src/styles.css`, and `docs/agent_memory.md`.
+- Implemented: minimal `CreateTaskRequest`; exact camelCase `POST /api/v1/tasks`; active workspace guidance and badge; labelled title/description/role form; whitespace-aware required title validation with `aria-invalid`/`aria-describedby`; pending/error/success states; immediate ready-task result; and TaskDetails reuse in both creation and lookup paths.
+- State behavior: the response is written to `queryKeys.task(task.id)` and the matching query is invalidated/refetched; only the created task ID remains local UI state. Form values clear after success and remain intact after RFC 9457 or connection failure. Changing active workspace remounts the form and removes a result from the previous workspace.
+- Resumability issue resolved: `@mensura/shared-types` previously exposed declaration types only from generated `dist`, so a new contract was invisible to Studio until a manual shared build. Type consumers now resolve `src/index.ts`, while runtime imports remain on built `dist`, allowing clean-checkout typechecking without stale generated declarations.
+- Verification: shared and Studio strict TypeScript checks passed; all 13 Studio tests across 7 files passed, including task request serialization, client validation, success rendering, cache-backed refresh, RFC 9457 display, and value preservation after failure.
+- Follow-up: add one reusable queued-run mutation/result component to TaskDetails so both newly created and looked-up tasks can start a run. Preserve the standalone run inspector and do not add events or orchestration behavior.
+
+### 2026-07-19 — Implement reusable queued-run creation
+
+- Files changed: `apps/studio/src/api/{coreClient,coreClient.test}.ts`, `apps/studio/src/test/render.tsx`, `apps/studio/src/features/runs/{RunDetails,RunInspector,StartRunAction,StartRunAction.test}.tsx`, `apps/studio/src/features/tasks/TaskDetails.tsx`, `apps/studio/src/styles.css`, and `docs/agent_memory.md`.
+- Implemented: exact `POST /api/v1/tasks/{task_id}/runs`; reusable Start run action embedded in TaskDetails; pending and RFC 9457 failure states; immediate queued-run details; and shared RunDetails rendering for both the mutation result and run inspector.
+- Reuse boundary: every successfully created or looked-up task exposes the same run action. No separate mutation implementations or duplicated task/run resource cards were introduced.
+- Query behavior: run response is written to `queryKeys.run(run.id)`, then both its run query and the source task query are invalidated/refetched. This reflects Core's actual result—task remains `ready`, run remains `queued`—without optimistic status simulation.
+- Verification: Studio strict TypeScript checking passed; all 16 Studio tests across 8 files passed, including run URL encoding, success refresh/rendering, and RFC 9457 failure behavior.
+- Follow-up: add one full App-level test for workspace create/selection -> task create -> run create, update user documentation, then run root/Core/native/live verification before marking the cycle complete.
+
+### 2026-07-19 — Prepare the fourth-cycle acceptance and verification pass
+
+- Files changed: `apps/studio/src/app/App.test.tsx`, `apps/studio/src/features/tasks/TaskInspector.test.tsx`, `apps/studio/README.md`, root `README.md`, and `docs/agent_memory.md`.
+- Acceptance coverage: added a full App-level user flow with an isolated test CoreClient: create workspace -> automatic persisted selection -> create task -> start run -> display queued run. Added explicit coverage that a task retrieved through Task Inspector exposes the same working run action.
+- Documentation: Studio/root READMEs now describe active selection restoration, ready task creation, queued placeholder runs, Core restart behavior, and the still-deferred worker/list/event features.
+- Verification before final matrix: Studio strict TypeScript check passed and 17 tests across 9 files passed before the additional looked-up-task acceptance case. No final success claim is made until the full root suite, Core regressions, Rust formatting/native build, and live HTTP sequence complete.
+- Planned live evidence: run the exact Core workspace/task/run POST+GET sequence against Uvicorn and launch the newly built Tauri application against that Core. UI mutation behavior is covered by the App-level acceptance test; native runtime evidence must still confirm the built WebView reaches Core.
+
+### 2026-07-19 — Verify and complete the first Studio task flow
+
+- Files changed: `packages/shared-types/{package.json,src/api.ts}`, `apps/studio/src/{api,app,features,styles.css,test}/**`, `apps/studio/README.md`, root `README.md`, and `docs/agent_memory.md`.
+- Implemented outcome: a user can create or select a workspace, restore that selection across Studio reloads, create a ready task for it, start a queued run from the created or looked-up task, and immediately inspect both resource responses in the existing shell.
+- Root verification: `pnpm check` passed shared/Studio strict TypeScript, 10 shared tests, 18 Studio tests across 9 files, production shared/Studio builds, and native `cargo check`; `cargo fmt --check` and `git diff --check` passed.
+- Core regression verification: Python 3.12 Ruff lint/format passed and all 12 API/OpenAPI tests passed with warnings treated as errors.
+- Native build verification: `pnpm studio:build` rebuilt the optimized binary, macOS `.app`, and DMG with the new flow.
+- Live Core verification: against a fresh Uvicorn process, `POST /workspaces`, `POST /tasks`, and `POST /tasks/{id}/runs` returned `201`; subsequent task/run GETs returned `200` with task `ready` and run `queued`. The freshly built Tauri WebView then connected to the same process and received `200` for health and workspace list. Studio and Core were stopped cleanly.
+- Evidence boundary: App-level acceptance exercises the actual React forms, persistence hook, client interface, mutations, cache refreshes, and rendered results. The live pass separately proves the exact Core HTTP sequence and native WebView transport; it did not claim orchestration or a worker transition beyond `queued`.
+- Mutation/refetch boundary: successful POST responses are committed to Query cache before non-blocking invalidation. A later GET failure is shown by that resource query and does not retroactively convert a successful create mutation into a failed submission or restore already accepted form values.
+- Next priority: add a read-only Core Git adapter for the active workspace and a small Studio repository summary showing repository validity, branch, dirty state, and safe diff metadata. This is the next vertical slice toward repo -> task -> diff without adding editor or execution UI.
 
 ### 2026-07-19 14:55 MSK — Start work cycle 3: minimal Studio shell
 
@@ -255,20 +312,23 @@
 - Tauri 2 desktop Studio with React 19, Vite 8, a single resizable window, desktop app icons, CSP, and a local-Core-only native HTTP capability.
 - TanStack Query-backed Core health polling, workspace list/create behavior, task lookup, and run lookup with explicit loading, empty, success, connection-error, and RFC 9457 error states.
 - Shared Health, workspace transport, and Problem Details contracts aligned with Core's camelCase responses and nullable fields.
-- Seven passing Studio client/component tests and successful native release binary, macOS `.app`, and DMG builds.
+- Eighteen passing Studio client/component/acceptance tests and successful native release binary, macOS `.app`, and DMG builds.
 - Verified live desktop connectivity from the release Tauri WebView to Core health and workspace endpoints.
+- Persisted active workspace selection with stale-ID reconciliation after Core restart.
+- Accessible active-workspace task creation with client validation, RFC 9457 failures, value preservation on failure, and immediate ready-task details.
+- Reusable queued-run creation from both created and looked-up tasks, with task/run query refresh and immediate queued-run details.
+- Verified live Core workspace -> ready task -> queued run POST/GET sequence.
 
 ## Pending Tasks
 
 ### MVP
 
-1. Add Studio workspace selection, task creation, and placeholder run launch using the existing Core v1 endpoints.
-2. Add local Git repository inspection and safe diff generation behind a Core adapter.
-3. Add the first Guard runner for configured lint/test commands with structured, blocking results.
-4. Add deterministic Vault repository indexing and basic retrieval; defer embeddings until the ingestion contract is stable.
-5. Implement one observable task flow: create task -> run explicit stub/provider adapter -> produce diff -> execute Guard -> review -> approve/reject.
-6. Add Docker Compose only for dependencies required by the working flow, plus CI for format, typecheck, tests, and builds.
-7. Replace temporary in-memory adapters with durable storage where acceptance criteria require restart-safe history.
+1. Add local Git repository inspection and safe diff generation behind a Core adapter, with a read-only Studio repository summary for the active workspace.
+2. Add the first Guard runner for configured lint/test commands with structured, blocking results.
+3. Add deterministic Vault repository indexing and basic retrieval; defer embeddings until the ingestion contract is stable.
+4. Implement one observable execution flow: queued run -> explicit stub/provider adapter -> produce diff -> execute Guard -> review -> approve/reject.
+5. Add Docker Compose only for dependencies required by the working flow, plus CI for format, typecheck, tests, and builds.
+6. Replace temporary in-memory adapters with durable storage where acceptance criteria require restart-safe history.
 
 ### Post-MVP
 
@@ -342,6 +402,13 @@
 - Reason: native requests avoid WebView CORS differences while Tauri capabilities make network access reviewable. Client injection provides focused tests and a future endpoint-settings seam without introducing a global store.
 - Alternatives considered: enabling wildcard CORS on Core, proxying every request through custom Rust commands, hard-coding fetch calls in panels, and adding a global UI state library. Rejected because each either widens access or duplicates state/transport logic without serving the minimal shell.
 - Consequences: a non-default Core origin needs both a `VITE_MENSURA_CORE_URL` build setting and a reviewed capability change; browser-only Vite use may additionally require CORS; Studio currently connects to Core but does not manage its lifecycle.
+
+### Studio active workspace and mutation results
+
+- Decision: persist only the active workspace ID in localStorage; reconcile it against the server workspace query; keep task/run resources exclusively in TanStack Query; and retain only the IDs of the last created resources as local presentation state.
+- Reason: workspace selection is durable client preference, while task/run records are server authority. Query seeding plus invalidation makes mutation results immediate without inventing optimistic status changes or adding a global client-state library.
+- Alternatives considered: persisting full workspace/task/run objects, a Redux/Zustand store, optimistic task/run transitions, and separate run actions for created versus inspected tasks. Rejected because they create stale authorities, duplicate server state, or duplicate mutation behavior.
+- Consequences: a Core restart invalidates the restored workspace ID and Studio clears it; switching workspace remounts the task form/result; created task and run remain visible through their query entries; run status truthfully stays `queued` until Core implements execution.
 
 ## Open Questions
 

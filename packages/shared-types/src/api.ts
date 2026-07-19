@@ -1,4 +1,4 @@
-import type { Workspace } from "./domain.js";
+import type { AgentRole, Workspace } from "./domain.js";
 
 export interface HealthResponse {
   status: "ok";
@@ -14,6 +14,13 @@ export interface WorkspaceCollection {
 export interface CreateWorkspaceRequest {
   name: string;
   rootPath: string;
+}
+
+export interface CreateTaskRequest {
+  workspaceId: string;
+  title: string;
+  description: string;
+  assignedRole?: AgentRole;
 }
 
 export interface ProblemFieldError {

@@ -62,4 +62,58 @@ describe("Core client", () => {
       "Could not connect to Mensura Core at http://offline.test.",
     );
   });
+
+  it("creates a task with the Core v1 camelCase request", async () => {
+    const task = {
+      id: "20c74e92-d9fc-4e65-bfbb-4924cc181ed1",
+      workspaceId: "5ca252af-76f4-4aed-9718-ff97b610ce90",
+      title: "Create the first task",
+      description: "Keep the flow vertical.",
+      status: "ready" as const,
+      assignedRole: "coder" as const,
+      createdAt: "2026-07-19T12:00:00Z",
+      updatedAt: "2026-07-19T12:00:00Z",
+    };
+    const fetcher = vi.fn(() => Promise.resolve(Response.json(task, { status: 201 })));
+    const client = createCoreClient({ baseUrl: "http://core.test", fetcher });
+
+    await expect(
+      client.createTask({
+        workspaceId: task.workspaceId,
+        title: task.title,
+        description: task.description,
+        assignedRole: "coder",
+      }),
+    ).resolves.toEqual(task);
+    expect(fetcher).toHaveBeenCalledWith("http://core.test/api/v1/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        workspaceId: task.workspaceId,
+        title: task.title,
+        description: task.description,
+        assignedRole: "coder",
+      }),
+    });
+  });
+
+  it("creates a queued run for an encoded task ID", async () => {
+    const run = {
+      id: "9dc58c91-105d-43af-95cb-32e546ce4c9f",
+      taskId: "task/id",
+      status: "queued" as const,
+      startedAt: null,
+      finishedAt: null,
+      createdAt: "2026-07-19T12:05:00Z",
+      updatedAt: "2026-07-19T12:05:00Z",
+    };
+    const fetcher = vi.fn(() => Promise.resolve(Response.json(run, { status: 201 })));
+    const client = createCoreClient({ baseUrl: "http://core.test", fetcher });
+
+    await expect(client.createRun(run.taskId)).resolves.toEqual(run);
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://core.test/api/v1/tasks/task%2Fid/runs",
+      { method: "POST" },
+    );
+  });
 });

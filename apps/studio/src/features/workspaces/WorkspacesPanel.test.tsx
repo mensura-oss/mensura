@@ -26,8 +26,15 @@ describe("WorkspacesPanel", () => {
       return Promise.resolve(createdWorkspace);
     });
     const client = createTestClient({ createWorkspace, listWorkspaces });
+    const onActiveWorkspaceChange = vi.fn();
 
-    renderWithAppProviders(<WorkspacesPanel />, client);
+    renderWithAppProviders(
+      <WorkspacesPanel
+        activeWorkspaceId={null}
+        onActiveWorkspaceChange={onActiveWorkspaceChange}
+      />,
+      client,
+    );
 
     expect(await screen.findByText(/No workspaces yet/)).toBeVisible();
     await user.type(screen.getByLabelText("Name"), "Mensura");
@@ -40,5 +47,28 @@ describe("WorkspacesPanel", () => {
       rootPath: "/code/mensura",
     });
     expect(listWorkspaces).toHaveBeenCalledTimes(2);
+    expect(onActiveWorkspaceChange).toHaveBeenCalledWith(createdWorkspace.id);
+  });
+
+  it("selects an existing workspace", async () => {
+    const user = userEvent.setup();
+    const onActiveWorkspaceChange = vi.fn();
+    const client = createTestClient({
+      listWorkspaces: () =>
+        Promise.resolve({ items: [createdWorkspace], total: 1 }),
+    });
+
+    renderWithAppProviders(
+      <WorkspacesPanel
+        activeWorkspaceId={null}
+        onActiveWorkspaceChange={onActiveWorkspaceChange}
+      />,
+      client,
+    );
+
+    await user.click(
+      await screen.findByRole("button", { name: /Mensura.*\/code\/mensura/ }),
+    );
+    expect(onActiveWorkspaceChange).toHaveBeenCalledWith(createdWorkspace.id);
   });
 });
