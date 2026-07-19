@@ -8,7 +8,13 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from mensura_core.exceptions import ResourceConflictError, ResourceNotFoundError
+from mensura_core.exceptions import (
+    NotGitRepositoryError,
+    RepositoryPathNotFoundError,
+    ResourceConflictError,
+    ResourceNotFoundError,
+    UnsupportedRepositoryStateError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +22,9 @@ PROBLEM_MEDIA_TYPE = "application/problem+json"
 NOT_FOUND_TYPE = "urn:mensura:problem:resource-not-found"
 CONFLICT_TYPE = "urn:mensura:problem:resource-conflict"
 VALIDATION_TYPE = "urn:mensura:problem:validation-error"
+REPOSITORY_PATH_NOT_FOUND_TYPE = "urn:mensura:problem:repository-path-not-found"
+NOT_GIT_REPOSITORY_TYPE = "urn:mensura:problem:not-a-git-repository"
+UNSUPPORTED_REPOSITORY_STATE_TYPE = "urn:mensura:problem:unsupported-repository-state"
 
 
 class InvalidParameter(BaseModel):
@@ -97,6 +106,42 @@ def install_problem_handlers(app: FastAPI) -> None:
             detail=error.detail,
         )
 
+    @app.exception_handler(RepositoryPathNotFoundError)
+    async def repository_path_not_found_handler(
+        request: Request, error: RepositoryPathNotFoundError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=404,
+            problem_type=REPOSITORY_PATH_NOT_FOUND_TYPE,
+            title="Repository path not found",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(NotGitRepositoryError)
+    async def not_git_repository_handler(
+        request: Request, error: NotGitRepositoryError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=422,
+            problem_type=NOT_GIT_REPOSITORY_TYPE,
+            title="Not a Git repository",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(UnsupportedRepositoryStateError)
+    async def unsupported_repository_state_handler(
+        request: Request, error: UnsupportedRepositoryStateError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=UNSUPPORTED_REPOSITORY_STATE_TYPE,
+            title="Unsupported repository state",
+            detail=error.detail,
+        )
+
     @app.exception_handler(RequestValidationError)
     async def request_validation_handler(
         request: Request, error: RequestValidationError
@@ -158,3 +203,4 @@ def problem_response(status: int, description: str) -> dict[int, dict[str, Any]]
 NOT_FOUND_RESPONSE = problem_response(404, "The requested resource does not exist.")
 CONFLICT_RESPONSE = problem_response(409, "The resource conflicts with existing state.")
 VALIDATION_RESPONSE = problem_response(422, "The request does not satisfy the v1 contract.")
+REPOSITORY_INVALID_RESPONSE = problem_response(422, "The workspace root is not a Git repository.")

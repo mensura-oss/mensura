@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from mensura_core.exceptions import ResourceConflictError, ResourceNotFoundError
+from mensura_core.git_adapter import GitRepositoryAdapter
 from mensura_core.models import (
     Run,
     RunStatus,
@@ -14,6 +15,7 @@ from mensura_core.models import (
     ensure_utc_timestamp,
 )
 from mensura_core.repositories import CoreRepository, DuplicateWorkspaceRootError
+from mensura_core.repository_models import RepositorySummary
 
 IdFactory = Callable[[], UUID]
 Clock = Callable[[], datetime]
@@ -29,11 +31,13 @@ class CoreService:
     def __init__(
         self,
         repository: CoreRepository,
+        git_repository: GitRepositoryAdapter,
         *,
         id_factory: IdFactory = uuid4,
         clock: Clock = utc_now,
     ) -> None:
         self._repository = repository
+        self._git_repository = git_repository
         self._id_factory = id_factory
         self._clock = clock
 
@@ -56,6 +60,11 @@ class CoreService:
                 f"A workspace for root path '{error.args[0]}' already exists."
             ) from error
         return workspace
+
+    def inspect_workspace_repository(self, workspace_id: UUID) -> RepositorySummary:
+        workspace = self._require_workspace(workspace_id)
+        inspection = self._git_repository.inspect(workspace.root_path)
+        return RepositorySummary(workspace_id=workspace.id, **inspection.model_dump())
 
     def create_task(self, payload: TaskCreate) -> Task:
         self._require_workspace(payload.workspace_id)

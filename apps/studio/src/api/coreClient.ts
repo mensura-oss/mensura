@@ -3,6 +3,7 @@ import type {
   CreateTaskRequest,
   HealthResponse,
   ProblemDetails,
+  RepositorySummary,
   Run,
   Task,
   Workspace,
@@ -24,6 +25,7 @@ export interface CoreClient {
   getHealth(): Promise<HealthResponse>;
   getRun(runId: string): Promise<Run>;
   getTask(taskId: string): Promise<Task>;
+  getWorkspaceRepository(workspaceId: string): Promise<RepositorySummary>;
   listWorkspaces(): Promise<WorkspaceCollection>;
 }
 
@@ -141,6 +143,11 @@ export function createCoreClient(options?: {
     },
     getTask(taskId) {
       return request<Task>(`/api/v1/tasks/${encodeURIComponent(taskId)}`);
+    },
+    getWorkspaceRepository(workspaceId) {
+      return request<RepositorySummary>(
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/repository`,
+      );
     },
     listWorkspaces() {
       return request<WorkspaceCollection>("/api/v1/workspaces");

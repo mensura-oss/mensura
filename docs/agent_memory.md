@@ -124,8 +124,8 @@
 
 ## Current Status
 
-- Work cycle 4 implementation and verification are complete; its logical Git commit is pending.
-- Core v1 is verified under Python 3.12 with versioned resource routes, predictable errors, replaceable in-memory storage, OpenAPI, and tests. Orchestration and database integration remain explicitly deferred.
+- Work cycle 5 is implementation- and verification-complete: Core exposes replaceable read-only local Git inspection and Studio shows the active workspace repository summary. Git writes, patch content, and repository tree UI remain absent.
+- Core v1 now includes a tested replaceable read-only Git inspection adapter and repository endpoint in addition to versioned resource routes, predictable errors, replaceable in-memory storage, and OpenAPI. Final cycle-wide/live verification is still pending.
 - Git history: the initial license commit plus the committed foundation from work cycle 1; no product implementation history is deep enough for meaningful code hotspots yet.
 - Documentation: ten project specifications, the root README, and this execution journal are tracked.
 - Code at audit time: no applications, services, packages, tests, dependency manifests, CI, or local run scripts existed.
@@ -135,6 +135,84 @@
 - Repository risk history is too small for meaningful hotspot or bug-magnet analysis; current risk is specification breadth and premature scaffolding.
 
 ## Completed Work Log
+
+### 2026-07-19 15:41 MSK — Start work cycle 5: read-only repository summary
+
+- Files changed: `docs/agent_memory.md`.
+- Audit: confirmed a clean worktree at `abddbfa`; re-read the current workspace/shared API models, Core service/repository/error/router boundaries, Studio client/query/active-workspace flow, current READMEs, and the five-commit Git history. History is too small for meaningful defect trends; `docs/agent_memory.md`, root documentation, and shared contracts are the expected integration hotspots.
+- Contract boundary before implementation: retain `Workspace.rootPath` as the local repository candidate; add isolated repository-inspection types with branch nullable for detached HEAD, aggregate counts, and path/change metadata only. Expose one workspace-scoped `GET /api/v1/workspaces/{workspace_id}/repository` endpoint; do not add a raw diff endpoint or any patch/body field.
+- Adapter boundary before implementation: define a read-only protocol consumed by `CoreService` and implement it with GitPython. The adapter may read repository/index/worktree metadata only and must not expose GitPython objects outside its module.
+- Error boundary before implementation: a missing workspace remains the existing resource-not-found problem; a nonexistent or non-directory root and a non-Git root receive distinct stable RFC 9457 problems; unexpected Git inspection failures stay sanitized by the global handler.
+- Studio boundary before implementation: one compact panel keyed by the active workspace ID, queried independently so failure cannot disable workspace/task/run controls. No repository tree, patch viewer, Git writes, routing, global state, Vault, Guard, auth, or worker behavior is introduced.
+- Follow-up: define and test the shared transport model first, then journal that stable contract before adding Core implementation.
+
+### 2026-07-19 — Define the repository inspection transport contract
+
+- Files changed: `packages/shared-types/src/{repository,index}.ts` and `docs/agent_memory.md`.
+- Defined: isolated `RepositorySummary` and `RepositoryDiffMetadata` contracts with a stable change-type vocabulary, nullable branch for detached HEAD, aggregate staged/unstaged/untracked/unique-path counts, and metadata limited to path, change type, staged flag, and optional old path.
+- Safety property: the shared response has no patch, hunk, line, blob, file-content, command, remote URL, credential, or write-operation field. A successful summary has literal `isRepository: true`; invalid/missing roots are represented by RFC 9457 errors rather than a partially successful object.
+- Compatibility choice: `typeChanged` follows the existing camelCase JSON convention. One path may appear twice when it has both staged and unstaged changes; category counts are unique within their category and `changedPathsCount` is unique across all categories.
+- Follow-up: add the GitPython-backed protocol implementation, domain problems, workspace-scoped route, and adapter/API/OpenAPI tests before touching Studio.
+
+### 2026-07-19 — Prepare the Core Git inspection step
+
+- Files changed: `docs/agent_memory.md`.
+- Planned implementation: inject a `GitRepositoryAdapter` protocol into `CoreService`; default `create_app` to a GitPython implementation; make service lookup resolve the workspace first and pass only its root path into the adapter; keep FastAPI routers free of GitPython imports.
+- Counting semantics: staged and unstaged counts are unique current paths within their respective index/worktree comparisons; untracked count is Git's untracked path list; changed-path count is their union. Diff metadata is sorted deterministically and may contain a staged plus unstaged entry for the same path.
+- State handling: missing filesystem roots and non-directory paths are `repository-path-not-found` problems; existing non-repositories are `not-a-git-repository`; repositories without a resolvable commit are an `unsupported-repository-state` conflict; detached HEAD is supported with `branch: null`.
+- Test boundary: adapter tests use disposable real Git repositories and assert clean, dirty, staged, untracked, rename, and detached behavior; API tests assert workspace scoping, exact media types/problem URNs, absence of patch-like fields, and OpenAPI surface.
+- Follow-up: implement this boundary without invoking any Git write operation in production code.
+
+### 2026-07-19 — Implement and verify Core read-only Git inspection
+
+- Files changed: `services/core/pyproject.toml`, `services/core/src/mensura_core/{git_adapter,repository_models,exceptions,service,main}.py`, `services/core/src/mensura_core/api/{problems,routers/workspaces}.py`, `services/core/tests/{test_git_adapter,test_repository_api,test_openapi}.py`, and `docs/agent_memory.md`.
+- Adapter design: `CoreService` depends on the one-method `GitRepositoryAdapter.inspect` protocol so one request uses one inspection boundary and minimizes cross-call drift. `GitPythonRepositoryAdapter` is the default implementation; GitPython types remain private to the adapter and can later be replaced without changing the router or HTTP contract. Concurrent external repository changes can still make a result best-effort rather than atomic.
+- Implemented endpoint: `GET /api/v1/workspaces/{workspace_id}/repository` resolves the stored workspace root, returns branch/dirty/count/path metadata, supports detached HEAD with a null branch, and never requests or serializes diff patches.
+- Problem contract: missing workspace uses `resource-not-found`; missing/non-directory roots use `repository-path-not-found` (404); existing non-repositories use `not-a-git-repository` (422); bare/unborn/uninspectable Git state uses `unsupported-repository-state` (409). All use `application/problem+json`.
+- Production read-only boundary: implementation calls only repository opening, HEAD/branch lookup, index-to-HEAD/worktree comparisons, and untracked-file discovery. Git mutation commands appear only in disposable test-fixture setup, never in application code or against the user's repository.
+- Coverage: disposable repositories verify clean state, staged plus unstaged changes on one path, untracked files, staged rename metadata, detached HEAD, missing/non-repo/unborn roots, workspace scoping, safe API shape, exact problem media/type, and OpenAPI schema/surface.
+- Verification: Python 3.12 Ruff lint/format passed and all 22 Core tests passed with warnings treated as errors.
+- Follow-up: add a separately failing TanStack Query repository request and compact active-workspace panel; do not couple it to task/run rendering.
+
+### 2026-07-19 — Prepare the Studio repository summary step
+
+- Files changed: `docs/agent_memory.md`.
+- Planned client boundary: extend `CoreClient` with one typed `getWorkspaceRepository(workspaceId)` call and add a workspace-specific query key. Preserve exact RFC 9457 problems through the existing `CoreApiError` path.
+- Planned UI boundary: render a compact panel only when an active workspace exists; show root/branch, clean or dirty status, category counts, and a bounded metadata list with change/staged badges. A repository failure remains local to this panel and must not hide or disable task/run/workspace controls.
+- Empty/error behavior: no active workspace gets actionable guidance; a clean repository gets an explicit zero-change state; detached HEAD is shown as `Detached HEAD`; invalid root/non-repo problems are displayed with the existing structured Problem Details component.
+- Test boundary: cover URL encoding/client typing, no-selection guidance, clean and dirty summaries, bounded changed-path rendering, detached branch, and non-fatal RFC 9457 display.
+- Follow-up: implement the client/query/component slice and verify it independently before documentation and live runtime checks.
+
+### 2026-07-19 — Implement and verify the Studio repository summary
+
+- Files changed: `apps/studio/src/api/{coreClient,coreClient.test}.ts`, `apps/studio/src/app/{App,App.test}.tsx`, `apps/studio/src/app/queryClient.ts`, `apps/studio/src/features/repository/{RepositorySummaryPanel,RepositorySummaryPanel.test}.tsx`, `apps/studio/src/test/render.tsx`, `apps/studio/src/styles.css`, and `docs/agent_memory.md`.
+- Implemented: typed repository client call with encoded workspace ID; dedicated TanStack Query key; active-workspace panel with refresh, branch/detached label, clean/dirty badge, staged/unstaged/untracked/unique-path counts, and a deterministic list capped at eight metadata entries.
+- Isolation: the repository query is independent from workspace/task/run queries. No active workspace makes no request; inspection errors render through the existing Problem Details component inside the panel; the App acceptance test proves task/run actions remain available when repository inspection fails.
+- Safe rendering: Studio renders path/change/staged metadata only. It has no patch viewer, content renderer, Git command controls, repository tree, or mutation hook.
+- Coverage: client URL typing plus four panel behaviors cover no selection, dirty counts/bounded paths, clean detached HEAD, and RFC 9457 non-repository state. Studio now has 23 passing tests across 10 files, and strict TypeScript checking passes.
+- Contract refinement: `branch` is always present and nullable so detached HEAD remains explicit; `oldPath` is optional/nullable across the shared contract and current Pydantic responses emit `null` when no previous path exists.
+- Follow-up: update Core/Studio/root documentation, run all Python/TypeScript/Rust/build checks, then inspect this real Mensura repository through a live Core endpoint and release Studio WebView.
+
+### 2026-07-19 — Prepare fifth-cycle documentation and acceptance verification
+
+- Files changed: `docs/agent_memory.md`.
+- Documentation plan: describe the new endpoint, GitPython adapter boundary, read-only guarantee, error URNs, panel behavior, and the fact that a workspace root must itself be a committed non-bare Git repository. Update the next priority without claiming execution or diff review.
+- Automated verification plan: run root `pnpm check`, Core Ruff lint/format and all tests with warnings as errors, Rust format, and whitespace checks. Build the native Studio bundle only after those pass.
+- Live verification plan: start fresh Core, create a workspace for the current Mensura repository, inspect its exact current branch/dirty metadata through HTTP, and launch the release Studio binary to confirm the WebView reaches the new repository endpoint. Do not alter the repository to manufacture dirty state; dirty behavior is already covered with disposable test repositories.
+- Evidence boundary: live HTTP/native transport will confirm actual integration against the current local repository; component tests remain the evidence for exact badge/count/path/error rendering unless GUI automation is explicitly used.
+- Follow-up: complete documentation and the verification matrix, then record only observed results.
+
+### 2026-07-19 — Verify and complete the read-only repository vertical slice
+
+- Files changed: `packages/shared-types/src/{repository,index}.ts`, `services/core/{pyproject.toml,README.md,src/**,tests/**}`, `apps/studio/{README.md,src/**}`, root `README.md`, and `docs/agent_memory.md`.
+- Implemented outcome: a workspace can keep its existing local `rootPath`; Core can inspect that path through a replaceable read-only GitPython adapter; `GET /api/v1/workspaces/{workspace_id}/repository` returns safe branch/status/count/path metadata; Studio shows that summary for the active workspace without coupling failures to task/run controls.
+- Root verification: `pnpm check` passed shared/Studio strict TypeScript, 10 shared tests, 23 Studio tests across 10 files, production shared/Studio builds, and native `cargo check`; `cargo fmt --check` and `git diff --check` passed.
+- Core verification: Python 3.12 Ruff lint/format passed and all 23 API/OpenAPI/adapter tests passed with warnings treated as errors, including preservation of `branch: null` through the HTTP endpoint for detached HEAD. Disposable fixture repositories cover Git mutations needed to construct states; production code and the live Mensura repository were inspected read-only.
+- Native build verification: `pnpm studio:build` rebuilt the optimized binary, macOS `.app`, and arm64 DMG successfully.
+- Live real-repository verification: a fresh Core workspace pointed to `/Users/makedoni/Documents/mensura`; the endpoint returned `main`, dirty state, 0 staged, 19 unstaged, 7 untracked, and 26 unique changed paths with no patch/content fields. These counts matched the current worktree categories at inspection time.
+- Live desktop verification: the release Tauri app connected to Core, listed the live workspace, and after selection rendered `main`, `Dirty`, the exact 0/19/7/26 counts, eight changed-path metadata rows, and an `18 more metadata entries` summary. Core recorded `200` requests for health, workspaces, and the new repository endpoint. Studio and Core then stopped cleanly.
+- Safety boundary: no Git mutation was run against the Mensura repository. The API has no patch/body contract, Studio has no write control or content viewer, and invalid repository state remains a local RFC 9457 panel error.
+- Next priority: implement the first narrowly configured Guard lint/test runner with structured blocking results and a compact Studio result view, preserving the same adapter and non-orchestration discipline.
 
 ### 2026-07-19 15:23 MSK — Start work cycle 4: first Studio task flow
 
@@ -302,33 +380,36 @@
 - Run lifecycle rules that require checking and an approval checkpoint before completion.
 - Runtime plugin manifest validation for supported types and permissions, semantic versions, duplicate permissions, and unsafe entry paths.
 - Automated coverage for the implemented lifecycle and plugin validation behavior (10 passing tests).
-- Python 3.12 FastAPI Core service with enabled OpenAPI and seven implemented HTTP endpoints.
+- Python 3.12 FastAPI Core service with enabled OpenAPI and eight implemented HTTP endpoints.
 - Workspace creation/listing with exact-root conflict detection in a process-local repository.
 - Task creation/retrieval tied to an existing workspace; created tasks begin in `ready` status.
 - Placeholder run creation/retrieval; created runs remain `queued` and perform no orchestration or side effects.
 - RFC 9457 `application/problem+json` responses for resource misses, conflicts, request validation, framework HTTP errors, and generic internal failures.
 - CamelCase JSON contracts aligned with TypeScript Workspace/Task ownership and documented in OpenAPI.
-- Twelve passing Core API/OpenAPI tests plus a successful real-Uvicorn smoke test.
+- Twenty-three passing Core API/OpenAPI/Git-adapter tests plus successful real-Uvicorn repository inspection.
 - Tauri 2 desktop Studio with React 19, Vite 8, a single resizable window, desktop app icons, CSP, and a local-Core-only native HTTP capability.
 - TanStack Query-backed Core health polling, workspace list/create behavior, task lookup, and run lookup with explicit loading, empty, success, connection-error, and RFC 9457 error states.
 - Shared Health, workspace transport, and Problem Details contracts aligned with Core's camelCase responses and nullable fields.
-- Eighteen passing Studio client/component/acceptance tests and successful native release binary, macOS `.app`, and DMG builds.
+- Twenty-three passing Studio client/component/acceptance tests and successful native release binary, macOS `.app`, and DMG builds.
 - Verified live desktop connectivity from the release Tauri WebView to Core health and workspace endpoints.
 - Persisted active workspace selection with stale-ID reconciliation after Core restart.
 - Accessible active-workspace task creation with client validation, RFC 9457 failures, value preservation on failure, and immediate ready-task details.
 - Reusable queued-run creation from both created and looked-up tasks, with task/run query refresh and immediate queued-run details.
 - Verified live Core workspace -> ready task -> queued run POST/GET sequence.
+- Isolated shared repository summary/diff-metadata contracts with no patch or file-content fields.
+- Replaceable read-only `GitRepositoryAdapter` with a GitPython implementation for branch, detached HEAD, clean/dirty, staged/unstaged/untracked counts, and safe changed-path metadata.
+- Workspace-scoped repository inspection endpoint with dedicated RFC 9457 problems for missing paths, non-repositories, and unsupported Git states.
+- Compact active-workspace Studio repository panel with independent TanStack Query failure handling and bounded changed-path rendering.
 
 ## Pending Tasks
 
 ### MVP
 
-1. Add local Git repository inspection and safe diff generation behind a Core adapter, with a read-only Studio repository summary for the active workspace.
-2. Add the first Guard runner for configured lint/test commands with structured, blocking results.
-3. Add deterministic Vault repository indexing and basic retrieval; defer embeddings until the ingestion contract is stable.
-4. Implement one observable execution flow: queued run -> explicit stub/provider adapter -> produce diff -> execute Guard -> review -> approve/reject.
-5. Add Docker Compose only for dependencies required by the working flow, plus CI for format, typecheck, tests, and builds.
-6. Replace temporary in-memory adapters with durable storage where acceptance criteria require restart-safe history.
+1. Add the first Guard runner for narrowly configured lint/test commands with structured, blocking results and a compact Studio result view.
+2. Add deterministic Vault repository indexing and basic retrieval; defer embeddings until the ingestion contract is stable.
+3. Implement one observable execution flow: queued run -> explicit stub/provider adapter -> produce safe diff metadata -> execute Guard -> review -> approve/reject.
+4. Add Docker Compose only for dependencies required by the working flow, plus CI for format, typecheck, tests, and builds.
+5. Replace temporary in-memory adapters with durable storage where acceptance criteria require restart-safe history.
 
 ### Post-MVP
 
@@ -409,6 +490,13 @@
 - Reason: workspace selection is durable client preference, while task/run records are server authority. Query seeding plus invalidation makes mutation results immediate without inventing optimistic status changes or adding a global client-state library.
 - Alternatives considered: persisting full workspace/task/run objects, a Redux/Zustand store, optimistic task/run transitions, and separate run actions for created versus inspected tasks. Rejected because they create stale authorities, duplicate server state, or duplicate mutation behavior.
 - Consequences: a Core restart invalidates the restored workspace ID and Studio clears it; switching workspace remounts the task form/result; created task and run remain visible through their query entries; run status truthfully stays `queued` until Core implements execution.
+
+### Read-only Git inspection adapter
+
+- Decision: use one `GitRepositoryAdapter.inspect` operation with GitPython as the MVP implementation, and expose one workspace-scoped summary endpoint.
+- Reason: one operation minimizes inconsistent results and contract duplication across separate branch/status/diff calls, while the protocol keeps GitPython and local-process assumptions replaceable.
+- Alternatives considered: shelling out directly from routers, multiple granular HTTP endpoints, raw patches, and early Dulwich integration; rejected because they couple transport to implementation, multiply race windows, expose unnecessary content, or add replacement work before the contract is proven.
+- Consequences: workspace roots must currently be committed non-bare worktree roots; detached HEAD is supported as a null branch; responses may repeat one path for staged and unstaged metadata but count unique paths; concurrent external changes can make the read best-effort rather than atomic; invalid states are isolated RFC 9457 problems; no Git writes or patch content exist in the production surface.
 
 ## Open Questions
 

@@ -1,6 +1,6 @@
 # Mensura Studio
 
-Mensura Studio is the Tauri 2 desktop client for the local Mensura Core service. The current vertical slice supports selecting a workspace, creating a task, and recording a queued placeholder run while keeping orchestration explicitly out of scope.
+Mensura Studio is the Tauri 2 desktop client for the local Mensura Core service. The current vertical slice supports selecting a workspace, inspecting its local Git state, creating a task, and recording a queued placeholder run while keeping orchestration explicitly out of scope.
 
 ## Requirements
 
@@ -49,10 +49,13 @@ pnpm studio:build
 - Static developer-tool shell with sidebar, top bar, and content grid
 - Core liveness polling and manual refresh
 - Workspace list, create form, selectable active workspace, and restored local selection
+- Compact read-only repository summary for the active workspace: branch/detached state, clean/dirty badge, staged/unstaged/untracked counts, and up to eight changed-path metadata entries
 - Task creation for the active workspace plus task lookup by UUID
 - Queued run creation from created or looked-up tasks plus run lookup by UUID
 - RFC 9457 Problem Details and connection errors shown without losing server fields
 
-The active workspace ID persists in localStorage, but Core data remains in memory. Restarting Core removes its workspaces/tasks/runs, and Studio clears a restored workspace selection when that ID no longer exists.
+The repository panel is independent from the rest of the shell. A missing path, non-Git root, or unsupported repository state is shown as RFC 9457 Problem Details without disabling workspace/task/run actions. It never renders patches or file contents and exposes no Git mutation controls.
 
-The app does not start Core itself. A created run remains `queued`; no worker consumes it. Monaco, terminals, repository navigation, task/run lists, live run events, Kanban, Vault, Guard, Hub, plugins, authentication, and settings are intentionally deferred.
+The active workspace ID persists in localStorage, but Core data remains in memory. Restarting Core removes its workspaces/tasks/runs, and Studio clears a restored workspace selection when that ID no longer exists. Repository status is inspected live from the workspace `rootPath`; for this MVP the path itself must be a committed, non-bare Git worktree root.
+
+The app does not start Core itself. A created run remains `queued`; no worker consumes it. Monaco, terminals, repository tree/navigation, full diff or patch viewing, Git writes, task/run lists, live run events, Kanban, Vault, Guard, Hub, plugins, authentication, and settings are intentionally deferred.

@@ -116,4 +116,28 @@ describe("Core client", () => {
       { method: "POST" },
     );
   });
+
+  it("retrieves repository metadata for an encoded workspace ID", async () => {
+    const summary = {
+      workspaceId: "workspace/id",
+      isRepository: true as const,
+      branch: "main",
+      isDirty: false,
+      stagedCount: 0,
+      unstagedCount: 0,
+      untrackedCount: 0,
+      changedPathsCount: 0,
+      diffMetadata: [],
+    };
+    const fetcher = vi.fn(() => Promise.resolve(Response.json(summary)));
+    const client = createCoreClient({ baseUrl: "http://core.test", fetcher });
+
+    await expect(
+      client.getWorkspaceRepository(summary.workspaceId),
+    ).resolves.toEqual(summary);
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://core.test/api/v1/workspaces/workspace%2Fid/repository",
+      undefined,
+    );
+  });
 });

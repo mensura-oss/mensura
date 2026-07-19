@@ -16,6 +16,8 @@ export function createTestClient(
     getHealth: () => Promise.reject(new Error("Not implemented in test")),
     getRun: () => Promise.reject(new Error("Not implemented in test")),
     getTask: () => Promise.reject(new Error("Not implemented in test")),
+    getWorkspaceRepository: () =>
+      Promise.reject(new Error("Not implemented in test")),
     listWorkspaces: () => Promise.reject(new Error("Not implemented in test")),
     ...overrides,
   };

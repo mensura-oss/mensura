@@ -62,6 +62,10 @@ describe("App task flow", () => {
         }),
       getRun: () => Promise.resolve(run),
       getTask: () => Promise.resolve(task),
+      getWorkspaceRepository: () =>
+        Promise.reject(
+          new Error("Repository inspection is independently unavailable."),
+        ),
       listWorkspaces: () =>
         Promise.resolve({ items: workspaces, total: workspaces.length }),
     });
@@ -83,6 +87,9 @@ describe("App task flow", () => {
 
     expect(await screen.findByText("Task created and ready.")).toBeVisible();
     expect(screen.getByText(task.title)).toBeVisible();
+    expect(
+      screen.getByText("Repository inspection is independently unavailable."),
+    ).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Start run" }));
 

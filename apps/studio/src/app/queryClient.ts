@@ -18,5 +18,7 @@ export const queryKeys = {
   health: ["core", "health"] as const,
   run: (runId: string) => ["core", "runs", runId] as const,
   task: (taskId: string) => ["core", "tasks", taskId] as const,
+  workspaceRepository: (workspaceId: string) =>
+    ["core", "workspaces", workspaceId, "repository"] as const,
   workspaces: ["core", "workspaces"] as const,
 };

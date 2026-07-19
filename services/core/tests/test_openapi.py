@@ -1,13 +1,14 @@
 from fastapi.testclient import TestClient
 
 
-def test_openapi_exposes_only_the_cycle_two_contract(client: TestClient) -> None:
+def test_openapi_exposes_the_implemented_v1_contract(client: TestClient) -> None:
     schema = client.get("/openapi.json").json()
 
     assert schema["info"]["version"] == "0.1.0"
     assert set(schema["paths"]) == {
         "/health",
         "/api/v1/workspaces",
+        "/api/v1/workspaces/{workspace_id}/repository",
         "/api/v1/tasks/{task_id}",
         "/api/v1/tasks",
         "/api/v1/tasks/{task_id}/runs",
@@ -19,9 +20,25 @@ def test_openapi_documents_camel_case_and_problem_media_type(client: TestClient)
     schema = client.get("/openapi.json").json()
     workspace_create = schema["components"]["schemas"]["WorkspaceCreate"]
     task = schema["components"]["schemas"]["Task"]
+    repository_summary = schema["components"]["schemas"]["RepositorySummary"]
 
     assert set(workspace_create["properties"]) == {"name", "rootPath"}
     assert "workspaceId" in task["properties"]
+    assert set(repository_summary["properties"]) == {
+        "workspaceId",
+        "isRepository",
+        "branch",
+        "isDirty",
+        "stagedCount",
+        "unstagedCount",
+        "untrackedCount",
+        "changedPathsCount",
+        "diffMetadata",
+    }
+    assert all(
+        forbidden not in repository_summary["properties"]
+        for forbidden in ("patch", "content", "body", "hunks")
+    )
 
     error_response = schema["paths"]["/api/v1/tasks/{task_id}"]["get"]["responses"]["404"]
     assert set(error_response["content"]) == {"application/problem+json"}

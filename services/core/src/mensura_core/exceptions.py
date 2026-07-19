@@ -16,3 +16,24 @@ class ResourceConflictError(CoreError):
     def __init__(self, detail: str) -> None:
         self.detail = detail
         super().__init__(detail)
+
+
+class RepositoryInspectionError(CoreError):
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)
+
+
+class RepositoryPathNotFoundError(RepositoryInspectionError):
+    def __init__(self, path: str) -> None:
+        super().__init__(f"Workspace root path '{path}' does not exist or is not a directory.")
+
+
+class NotGitRepositoryError(RepositoryInspectionError):
+    def __init__(self, path: str) -> None:
+        super().__init__(f"Workspace root path '{path}' is not a Git repository.")
+
+
+class UnsupportedRepositoryStateError(RepositoryInspectionError):
+    def __init__(self, path: str, reason: str) -> None:
+        super().__init__(f"Repository at '{path}' cannot be inspected. {reason}")
