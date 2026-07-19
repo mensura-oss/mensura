@@ -1,0 +1,22 @@
+{
+  "name": "mensura",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Open-source, self-hosted agentic development platform",
+  "license": "AGPL-3.0-only",
+  "packageManager": "pnpm@11.13.1",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=11"
+  },
+  "scripts": {
+    "build": "pnpm --recursive build",
+    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "test": "pnpm --recursive test",
+    "typecheck": "pnpm --recursive typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@mensura/shared-types",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared domain and plugin contracts for Mensura",
+  "license": "AGPL-3.0-only",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  }
+}

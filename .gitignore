@@ -1,0 +1,22 @@
+node_modules/
+.pnpm-store/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+.DS_Store
+
+# Python services
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+
+# Rust and Tauri
+target/
+
+# Editor-local files
+.idea/
+.vscode/
+*.swp
