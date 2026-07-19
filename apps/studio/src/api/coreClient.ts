@@ -8,6 +8,9 @@ import type {
   RepositorySummary,
   Run,
   Task,
+  VaultFileCollection,
+  VaultFilePreview,
+  VaultInventorySnapshot,
   Workspace,
   WorkspaceCollection,
 } from "@mensura/shared-types";
@@ -28,11 +31,18 @@ export interface CoreClient {
   ): Promise<GuardRunResponse>;
   createTask(input: CreateTaskRequest): Promise<Task>;
   createWorkspace(input: CreateWorkspaceRequest): Promise<Workspace>;
+  buildVaultInventory(workspaceId: string): Promise<VaultInventorySnapshot>;
   getHealth(): Promise<HealthResponse>;
   getLatestGuardRun(workspaceId: string): Promise<GuardRunResponse>;
   getRun(runId: string): Promise<Run>;
   getTask(taskId: string): Promise<Task>;
+  getVaultFilePreview(workspaceId: string, path: string): Promise<VaultFilePreview>;
+  getVaultInventory(workspaceId: string): Promise<VaultInventorySnapshot>;
   getWorkspaceRepository(workspaceId: string): Promise<RepositorySummary>;
+  listVaultFiles(
+    workspaceId: string,
+    options?: { query?: string; extension?: string; limit?: number },
+  ): Promise<VaultFileCollection>;
   listWorkspaces(): Promise<WorkspaceCollection>;
 }
 
@@ -122,6 +132,12 @@ export function createCoreClient(options?: {
 
   return {
     baseUrl,
+    buildVaultInventory(workspaceId) {
+      return request<VaultInventorySnapshot>(
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/vault/inventory`,
+        { method: "POST" },
+      );
+    },
     createGuardRun(workspaceId, input = {}) {
       return request<GuardRunResponse>(
         `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/guard/runs`,
@@ -166,6 +182,17 @@ export function createCoreClient(options?: {
     getTask(taskId) {
       return request<Task>(`/api/v1/tasks/${encodeURIComponent(taskId)}`);
     },
+    getVaultFilePreview(workspaceId, path) {
+      const search = new URLSearchParams({ path });
+      return request<VaultFilePreview>(
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/vault/files/content?${search.toString()}`,
+      );
+    },
+    getVaultInventory(workspaceId) {
+      return request<VaultInventorySnapshot>(
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/vault/inventory`,
+      );
+    },
     getWorkspaceRepository(workspaceId) {
       return request<RepositorySummary>(
         `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/repository`,
@@ -173,6 +200,16 @@ export function createCoreClient(options?: {
     },
     listWorkspaces() {
       return request<WorkspaceCollection>("/api/v1/workspaces");
+    },
+    listVaultFiles(workspaceId, options = {}) {
+      const search = new URLSearchParams();
+      if (options.query) search.set("query", options.query);
+      if (options.extension) search.set("extension", options.extension);
+      if (options.limit !== undefined) search.set("limit", String(options.limit));
+      const suffix = search.size ? `?${search.toString()}` : "";
+      return request<VaultFileCollection>(
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/vault/files${suffix}`,
+      );
     },
   };
 }

@@ -218,6 +218,10 @@ code {
   grid-column: 2;
 }
 
+.dashboard-grid__vault {
+  grid-column: 1 / -1;
+}
+
 .dashboard-grid__task-flow {
   grid-column: 1;
 }
@@ -959,6 +963,213 @@ input:focus-visible {
   font-size: 0.67rem;
 }
 
+.vault-building {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid #155e75;
+  border-radius: 0.5rem;
+  padding: 0.7rem;
+  color: #a5f3fc;
+  background: #0e2935;
+  font-size: 0.72rem;
+}
+
+.vault-ready,
+.vault-summary,
+.vault-files,
+.vault-inspector {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.vault-counts {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.vault-counts div {
+  border: 1px solid #253047;
+  border-radius: 0.45rem;
+  padding: 0.55rem;
+  background: #111827;
+}
+
+.vault-counts dt,
+.vault-file-metadata dt {
+  color: #6f7e96;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+}
+
+.vault-counts dd,
+.vault-file-metadata dd {
+  margin: 0.25rem 0 0;
+  color: #e2e8f0;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.vault-languages {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.vault-languages > span,
+.vault-section-heading strong {
+  color: #7f8ba3;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.vault-languages > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.vault-languages small {
+  color: #64748b;
+}
+
+.vault-browser {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.75fr) minmax(0, 1.25fr);
+  gap: 0.75rem;
+}
+
+.vault-files,
+.vault-inspector {
+  min-width: 0;
+  align-content: start;
+  border: 1px solid #253047;
+  border-radius: 0.55rem;
+  padding: 0.7rem;
+  background: #111827;
+}
+
+.vault-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.vault-section-heading > span {
+  color: #64748b;
+  font-size: 0.65rem;
+}
+
+.vault-file-list {
+  max-height: 22rem;
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  overflow: auto;
+  padding: 0;
+  list-style: none;
+}
+
+.vault-file-list button {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 0.4rem;
+  padding: 0.5rem 0.55rem;
+  color: #cbd5e1;
+  background: #0d1421;
+  cursor: pointer;
+  text-align: left;
+}
+
+.vault-file-list button:hover,
+.vault-file-list button[aria-pressed="true"] {
+  border-color: #155e75;
+  color: #e6fbff;
+  background: #10202b;
+}
+
+.vault-file-list button:focus-visible {
+  outline: 2px solid #22d3ee;
+  outline-offset: 1px;
+}
+
+.vault-file-list button span {
+  min-width: 0;
+  overflow: hidden;
+  font: 0.67rem "SFMono-Regular", Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-file-list button small {
+  flex: none;
+  color: #64748b;
+  font-size: 0.6rem;
+}
+
+.vault-file-metadata {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) repeat(3, minmax(72px, 0.5fr));
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.vault-file-metadata div {
+  min-width: 0;
+  border: 1px solid #253047;
+  border-radius: 0.4rem;
+  padding: 0.5rem;
+}
+
+.vault-file-metadata dd {
+  overflow: hidden;
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+}
+
+.vault-file-metadata code {
+  color: #a5f3fc;
+  font-size: 0.65rem;
+}
+
+.vault-preview {
+  min-width: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.vault-preview > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: #6f7e96;
+  font-size: 0.62rem;
+}
+
+.vault-preview pre {
+  max-height: 18rem;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid #202a3b;
+  border-radius: 0.4rem;
+  padding: 0.7rem;
+  color: #cbd5e1;
+  background: #090f1a;
+  font: 0.65rem/1.5 "SFMono-Regular", Consolas, monospace;
+  white-space: pre-wrap;
+}
+
 @media (max-width: 1040px) {
   .app-shell {
     grid-template-columns: 176px minmax(0, 1fr);
@@ -1016,9 +1227,15 @@ input:focus-visible {
   .dashboard-grid__workspaces,
   .dashboard-grid__repository,
   .dashboard-grid__guard,
+  .dashboard-grid__vault,
   .dashboard-grid__task-flow {
     grid-column: auto;
     grid-row: auto;
+  }
+
+  .vault-browser,
+  .vault-file-metadata {
+    grid-template-columns: 1fr;
   }
 }
 

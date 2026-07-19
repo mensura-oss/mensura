@@ -4,3 +4,4 @@ export * from "./guard.js";
 export * from "./plugin.js";
 export * from "./repository.js";
 export * from "./state-machine.js";
+export * from "./vault.js";

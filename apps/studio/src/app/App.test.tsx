@@ -71,6 +71,14 @@ describe("App task flow", () => {
           }),
         ),
       getTask: () => Promise.resolve(task),
+      getVaultInventory: () =>
+        Promise.reject(
+          new CoreApiError({
+            type: "urn:mensura:problem:vault-inventory-not-built",
+            title: "Vault inventory not built",
+            status: 404,
+          }),
+        ),
       getWorkspaceRepository: () =>
         Promise.reject(
           new Error("Repository inspection is independently unavailable."),

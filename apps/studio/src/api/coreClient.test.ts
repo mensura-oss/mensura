@@ -181,4 +181,42 @@ describe("Core client", () => {
       undefined,
     );
   });
+
+  it("builds and retrieves typed Vault inventory resources with encoded filters", async () => {
+    const fetcher = vi.fn(() => Promise.resolve(Response.json({ status: "ready" })));
+    const client = createCoreClient({ baseUrl: "http://core.test", fetcher });
+    const workspaceId = "workspace/id";
+
+    await client.buildVaultInventory(workspaceId);
+    expect(fetcher).toHaveBeenNthCalledWith(
+      1,
+      "http://core.test/api/v1/workspaces/workspace%2Fid/vault/inventory",
+      { method: "POST" },
+    );
+
+    await client.getVaultInventory(workspaceId);
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      "http://core.test/api/v1/workspaces/workspace%2Fid/vault/inventory",
+      undefined,
+    );
+
+    await client.listVaultFiles(workspaceId, {
+      query: "src/",
+      extension: "PY",
+      limit: 25,
+    });
+    expect(fetcher).toHaveBeenNthCalledWith(
+      3,
+      "http://core.test/api/v1/workspaces/workspace%2Fid/vault/files?query=src%2F&extension=PY&limit=25",
+      undefined,
+    );
+
+    await client.getVaultFilePreview(workspaceId, "src/main.py");
+    expect(fetcher).toHaveBeenNthCalledWith(
+      4,
+      "http://core.test/api/v1/workspaces/workspace%2Fid/vault/files/content?path=src%2Fmain.py",
+      undefined,
+    );
+  });
 });

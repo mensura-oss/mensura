@@ -1,6 +1,6 @@
 # Mensura Core
 
-Mensura Core is the HTTP boundary for tasks and future agent execution. The current service implements the first versioned resource contracts, process-local resource storage, read-only local Git inspection, and a manually triggered Ruff/pytest Guard runner. It does not call models, edit repositories, return patch content, implement a full policy engine, or persist data across restarts.
+Mensura Core is the HTTP boundary for tasks and future agent execution. The current service implements the first versioned resource contracts, process-local resource storage, read-only local Git inspection, deterministic Vault file inventory/retrieval, and a manually triggered Ruff/pytest Guard runner. It does not call models, edit repositories, generate embeddings, return patch content, implement a full policy engine, or persist data across restarts.
 
 ## Requirements
 
@@ -44,6 +44,10 @@ JSON property names use camelCase. Resource identifiers are UUIDs and timestamps
 | `GET` | `/api/v1/workspaces/{workspace_id}/repository` | Read-only branch/status/path metadata for the workspace root |
 | `POST` | `/api/v1/workspaces/{workspace_id}/guard/runs` | Runs configured lint/test checks synchronously and returns `201` |
 | `GET` | `/api/v1/workspaces/{workspace_id}/guard/runs/latest` | Returns the latest completed in-memory Guard result |
+| `POST` | `/api/v1/workspaces/{workspace_id}/vault/inventory` | Builds/replaces a deterministic inventory and returns `201` |
+| `GET` | `/api/v1/workspaces/{workspace_id}/vault/inventory` | Returns the latest in-memory inventory summary |
+| `GET` | `/api/v1/workspaces/{workspace_id}/vault/files` | Returns sorted file metadata with optional filters |
+| `GET` | `/api/v1/workspaces/{workspace_id}/vault/files/content?path=...` | Returns one bounded UTF-8 preview |
 | `GET` | `/api/v1/tasks/{task_id}` | Returns one task |
 | `POST` | `/api/v1/tasks` | Creates a ready task in an existing workspace |
 | `GET` | `/api/v1/runs/{run_id}` | Returns one run |
@@ -61,6 +65,18 @@ JSON property names use camelCase. Resource identifiers are UUIDs and timestamps
 - deterministic metadata entries containing only `path`, `changeType`, `staged`, and optional `oldPath`.
 
 The response model has no patch, hunk, blob, line, file-content, command, remote, or credential field. Production code performs no `add`, `commit`, `checkout`, `reset`, `push`, `pull`, `stash`, branch, or other Git mutation.
+
+## Vault v1 inventory and retrieval
+
+Vault inventory is manual, synchronous, deterministic, and read-only. A successful build creates a new immutable snapshot ID/time and replaces the latest process-local snapshot for that workspace. Entries are sorted case-insensitively by relative POSIX path with an exact-path tie-breaker.
+
+Traversal never follows symlinks. It prunes these directory names case-insensitively: `.git`, `node_modules`, `.pnpm-store`, `.venv`, `venv`, `.cache`, `dist`, `build`, `coverage`, `.next`, `target`, `out`, `output`, `__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, and `.turbo`. Sensitive environment/credential/key names, common OS metadata, compiled/archive artifacts, files over 5 MiB, symlinks, non-regular nodes, and unreadable entries are excluded. Each pruned directory or excluded filesystem entry increments `excludedEntryCount` once; descendants of a pruned directory are not enumerated.
+
+Remaining files are classified conservatively from known binary suffixes plus an 8 KiB sample: NUL bytes, invalid UTF-8, or a high control-character ratio produce `binary`; otherwise the item is `text`. A small fixed extension/name table provides language labels. Classification is not content parsing and is not guaranteed MIME detection.
+
+`GET .../vault/files` accepts optional `query` (case-insensitive path/name substring), `extension` (case-insensitive exact extension, with or without its leading dot), and `limit` (1–500, default 200). `total` is the filtered total before the limit and `returned` is the response item count.
+
+Preview accepts only a canonical relative path already present in the latest inventory. Core rejects absolute/backslash/parent/dot-normalized paths, revalidates every component against symlinks and root containment, and rechecks current file/size/binary state. Only strict UTF-8 text is returned, capped at 16 KiB with `previewBytes`, `totalBytes`, and `truncated`. No endpoint writes repository files. Fixed filtering does not interpret `.gitignore`, prove that content is secret-free, or provide embeddings, chunks, syntax trees, semantic scores, graph relations, watchers, or durable history.
 
 ## Guard v1 configuration and execution
 
@@ -120,8 +136,17 @@ Guard additionally uses:
 - `urn:mensura:problem:guard-run-in-progress` (`409`);
 - `urn:mensura:problem:guard-execution-failed` (`500`) when a configured process cannot start.
 
+Vault additionally uses:
+
+- `urn:mensura:problem:vault-root-invalid` (`409`);
+- `urn:mensura:problem:vault-inventory-not-built` (`404`);
+- `urn:mensura:problem:vault-path-invalid` (`422`);
+- `urn:mensura:problem:vault-file-excluded` (`403`);
+- `urn:mensura:problem:vault-binary-preview-refused` (`415`);
+- `urn:mensura:problem:vault-file-not-found` (`404`).
+
 Problem URNs are stable machine identifiers. They can be replaced by resolvable HTTPS documentation only as a versioned compatibility decision.
 
 ## Storage boundary
 
-Resource routers depend on `CoreService`; Guard routes depend on `GuardService`. Services use replaceable storage/config/runner/Git protocols. `InMemoryCoreRepository` stores workspaces/tasks/runs, `InMemoryGuardRunRepository` stores only the latest completed Guard result per workspace, and `GitPythonRepositoryAdapter` provides read-only live inspection. All in-memory resources disappear whenever Core stops. If another process changes Git state during one request, the repository summary is best-effort rather than atomic.
+Resource routers depend on `CoreService`; Guard routes depend on `GuardService`; Vault routes depend on `VaultService`. Services use replaceable storage/config/runner/Git/filesystem protocols. `InMemoryCoreRepository` stores workspaces/tasks/runs, `InMemoryGuardRunRepository` stores only the latest completed Guard result, `InMemoryVaultInventoryRepository` stores only the latest inventory/items, and the Git/filesystem adapters provide read-only live inspection. All in-memory resources disappear whenever Core stops. External filesystem changes can make any live read best-effort; preview therefore revalidates the selected path after inventory.

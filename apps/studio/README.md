@@ -1,6 +1,6 @@
 # Mensura Studio
 
-Mensura Studio is the Tauri 2 desktop client for the local Mensura Core service. The current vertical slice supports selecting a workspace, inspecting its local Git state, manually running configured Guard checks, creating a task, and recording a queued placeholder run while keeping orchestration explicitly out of scope.
+Mensura Studio is the Tauri 2 desktop client for the local Mensura Core service. The current vertical slice supports selecting a workspace, inspecting its local Git state, building and browsing a deterministic Vault file inventory, manually running configured Guard checks, creating a task, and recording a queued placeholder run while keeping orchestration explicitly out of scope.
 
 ## Requirements
 
@@ -50,6 +50,7 @@ pnpm studio:build
 - Core liveness polling and manual refresh
 - Workspace list, create form, selectable active workspace, and restored local selection
 - Compact read-only repository summary for the active workspace: branch/detached state, clean/dirty badge, staged/unstaged/untracked counts, and up to eight changed-path metadata entries
+- Manual Vault inventory build/refresh with included/excluded/text/binary counts, compact language summary, up to 200 deterministic file metadata entries, and a 16 KiB UTF-8 text preview inspector
 - Manual Guard panel with latest-result loading, `Run checks`, pass/fail and blocking state, aggregate counts, compact lint/test cards, and collapsed bounded output
 - Task creation for the active workspace plus task lookup by UUID
 - Queued run creation from created or looked-up tasks plus run lookup by UUID
@@ -59,6 +60,8 @@ The repository panel is independent from the rest of the shell. A missing path, 
 
 The Guard panel is also independent. Before running it, review the workspace's `.mensura/guard.json`: a manual run executes its validated Ruff/pytest argv in the workspace through Core. The UI stays pending while the synchronous request runs, shows configuration/execution problems locally, and never auto-runs checks. Core keeps only the latest completed result in memory.
 
+The Vault panel is manual and read-only. Build inventory traverses the current workspace root with Core's fixed exclusion rules and stores only the latest snapshot in memory. Selecting a text file loads at most 16 KiB; selecting a binary file shows metadata without making a preview request. Sensitive, generated, oversized, symlinked, missing, and unsafe paths are refused through RFC 9457 errors. This is deterministic metadata retrieval, not semantic search or a complete secret scanner.
+
 The active workspace ID persists in localStorage, but Core data remains in memory. Restarting Core removes its workspaces/tasks/runs, and Studio clears a restored workspace selection when that ID no longer exists. Repository status is inspected live from the workspace `rootPath`; for this MVP the path itself must be a committed, non-bare Git worktree root.
 
-The app does not start Core itself. A created run remains `queued`; no worker consumes it. Monaco, terminals, repository tree/navigation, full diff or patch viewing, Git writes, task/run lists, live run events, Kanban, Vault, the full Guard policy engine/history/config editor, Hub, plugins, authentication, and settings are intentionally deferred.
+The app does not start Core itself. A created run remains `queued`; no worker consumes it. Monaco, terminals, full repository tree/navigation, file editing, content/semantic search, embeddings, full diff or patch viewing, Git writes, task/run lists, live run events, Kanban, durable Vault history/watchers, the full Guard policy engine/history/config editor, Hub, plugins, authentication, and settings are intentionally deferred.

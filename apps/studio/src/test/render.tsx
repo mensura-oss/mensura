@@ -10,6 +10,7 @@ export function createTestClient(
 ): CoreClient {
   return {
     baseUrl: "http://127.0.0.1:8000",
+    buildVaultInventory: () => Promise.reject(new Error("Not implemented in test")),
     createGuardRun: () => Promise.reject(new Error("Not implemented in test")),
     createRun: () => Promise.reject(new Error("Not implemented in test")),
     createTask: () => Promise.reject(new Error("Not implemented in test")),
@@ -18,9 +19,12 @@ export function createTestClient(
     getLatestGuardRun: () => Promise.reject(new Error("Not implemented in test")),
     getRun: () => Promise.reject(new Error("Not implemented in test")),
     getTask: () => Promise.reject(new Error("Not implemented in test")),
+    getVaultFilePreview: () => Promise.reject(new Error("Not implemented in test")),
+    getVaultInventory: () => Promise.reject(new Error("Not implemented in test")),
     getWorkspaceRepository: () =>
       Promise.reject(new Error("Not implemented in test")),
     listWorkspaces: () => Promise.reject(new Error("Not implemented in test")),
+    listVaultFiles: () => Promise.reject(new Error("Not implemented in test")),
     ...overrides,
   };
 }

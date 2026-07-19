@@ -72,3 +72,39 @@ class GuardRunInProgressError(GuardError):
 class GuardRunNotFoundError(GuardError):
     def __init__(self, workspace_id: UUID) -> None:
         super().__init__(f"No completed Guard run exists for workspace '{workspace_id}'.")
+
+
+class VaultError(CoreError):
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)
+
+
+class VaultRootInvalidError(VaultError):
+    def __init__(self, path: str) -> None:
+        super().__init__(f"Workspace root path '{path}' does not exist or is not a directory.")
+
+
+class VaultInventoryNotBuiltError(VaultError):
+    def __init__(self, workspace_id: UUID) -> None:
+        super().__init__(f"No Vault inventory exists for workspace '{workspace_id}'.")
+
+
+class VaultPathInvalidError(VaultError):
+    def __init__(self) -> None:
+        super().__init__("The requested file path must be a normalized relative repository path.")
+
+
+class VaultFileExcludedError(VaultError):
+    def __init__(self, path: str) -> None:
+        super().__init__(f"File '{path}' is excluded from Vault inventory or preview access.")
+
+
+class VaultBinaryPreviewError(VaultError):
+    def __init__(self, path: str) -> None:
+        super().__init__(f"File '{path}' is binary and cannot be previewed as text.")
+
+
+class VaultFileNotFoundError(VaultError):
+    def __init__(self, path: str) -> None:
+        super().__init__(f"File '{path}' does not exist in the latest Vault inventory.")

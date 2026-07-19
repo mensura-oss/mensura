@@ -20,6 +20,12 @@ from mensura_core.exceptions import (
     ResourceNotFoundError,
     UnsupportedRepositoryStateError,
     UnsupportedWorkspaceStateError,
+    VaultBinaryPreviewError,
+    VaultFileExcludedError,
+    VaultFileNotFoundError,
+    VaultInventoryNotBuiltError,
+    VaultPathInvalidError,
+    VaultRootInvalidError,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,6 +43,12 @@ UNSUPPORTED_WORKSPACE_STATE_TYPE = "urn:mensura:problem:unsupported-workspace-st
 GUARD_EXECUTION_FAILED_TYPE = "urn:mensura:problem:guard-execution-failed"
 GUARD_RUN_IN_PROGRESS_TYPE = "urn:mensura:problem:guard-run-in-progress"
 GUARD_RUN_NOT_FOUND_TYPE = "urn:mensura:problem:guard-run-not-found"
+VAULT_ROOT_INVALID_TYPE = "urn:mensura:problem:vault-root-invalid"
+VAULT_INVENTORY_NOT_BUILT_TYPE = "urn:mensura:problem:vault-inventory-not-built"
+VAULT_PATH_INVALID_TYPE = "urn:mensura:problem:vault-path-invalid"
+VAULT_FILE_EXCLUDED_TYPE = "urn:mensura:problem:vault-file-excluded"
+VAULT_BINARY_PREVIEW_TYPE = "urn:mensura:problem:vault-binary-preview-refused"
+VAULT_FILE_NOT_FOUND_TYPE = "urn:mensura:problem:vault-file-not-found"
 
 
 class InvalidParameter(BaseModel):
@@ -224,6 +236,78 @@ def install_problem_handlers(app: FastAPI) -> None:
             detail=error.detail,
         )
 
+    @app.exception_handler(VaultRootInvalidError)
+    async def vault_root_invalid_handler(
+        request: Request, error: VaultRootInvalidError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=VAULT_ROOT_INVALID_TYPE,
+            title="Invalid Vault root",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(VaultInventoryNotBuiltError)
+    async def vault_inventory_not_built_handler(
+        request: Request, error: VaultInventoryNotBuiltError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=404,
+            problem_type=VAULT_INVENTORY_NOT_BUILT_TYPE,
+            title="Vault inventory not built",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(VaultPathInvalidError)
+    async def vault_path_invalid_handler(
+        request: Request, error: VaultPathInvalidError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=422,
+            problem_type=VAULT_PATH_INVALID_TYPE,
+            title="Invalid Vault file path",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(VaultFileExcludedError)
+    async def vault_file_excluded_handler(
+        request: Request, error: VaultFileExcludedError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=403,
+            problem_type=VAULT_FILE_EXCLUDED_TYPE,
+            title="Vault file access excluded",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(VaultBinaryPreviewError)
+    async def vault_binary_preview_handler(
+        request: Request, error: VaultBinaryPreviewError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=415,
+            problem_type=VAULT_BINARY_PREVIEW_TYPE,
+            title="Binary preview refused",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(VaultFileNotFoundError)
+    async def vault_file_not_found_handler(
+        request: Request, error: VaultFileNotFoundError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=404,
+            problem_type=VAULT_FILE_NOT_FOUND_TYPE,
+            title="Vault file not found",
+            detail=error.detail,
+        )
+
     @app.exception_handler(RequestValidationError)
     async def request_validation_handler(
         request: Request, error: RequestValidationError
@@ -287,3 +371,5 @@ CONFLICT_RESPONSE = problem_response(409, "The resource conflicts with existing 
 VALIDATION_RESPONSE = problem_response(422, "The request does not satisfy the v1 contract.")
 REPOSITORY_INVALID_RESPONSE = problem_response(422, "The workspace root is not a Git repository.")
 GUARD_EXECUTION_RESPONSE = problem_response(500, "A configured Guard command could not start.")
+FORBIDDEN_RESPONSE = problem_response(403, "The requested path is excluded from Vault access.")
+UNSUPPORTED_MEDIA_RESPONSE = problem_response(415, "The requested file is not previewable text.")

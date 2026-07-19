@@ -11,6 +11,9 @@ def test_openapi_exposes_the_implemented_v1_contract(client: TestClient) -> None
         "/api/v1/workspaces/{workspace_id}/repository",
         "/api/v1/workspaces/{workspace_id}/guard/runs",
         "/api/v1/workspaces/{workspace_id}/guard/runs/latest",
+        "/api/v1/workspaces/{workspace_id}/vault/inventory",
+        "/api/v1/workspaces/{workspace_id}/vault/files",
+        "/api/v1/workspaces/{workspace_id}/vault/files/content",
         "/api/v1/tasks/{task_id}",
         "/api/v1/tasks",
         "/api/v1/tasks/{task_id}/runs",
@@ -24,6 +27,8 @@ def test_openapi_documents_camel_case_and_problem_media_type(client: TestClient)
     task = schema["components"]["schemas"]["Task"]
     repository_summary = schema["components"]["schemas"]["RepositorySummary"]
     guard_run = schema["components"]["schemas"]["GuardRunResponse"]
+    vault_inventory = schema["components"]["schemas"]["VaultInventorySnapshot"]
+    vault_preview = schema["components"]["schemas"]["VaultFilePreview"]
 
     assert set(workspace_create["properties"]) == {"name", "rootPath"}
     assert "workspaceId" in task["properties"]
@@ -45,6 +50,23 @@ def test_openapi_documents_camel_case_and_problem_media_type(client: TestClient)
     assert "workspaceId" in guard_run["properties"]
     assert "blocking" in guard_run["properties"]
     assert "checks" in guard_run["properties"]
+    assert set(vault_inventory["properties"]) == {
+        "id",
+        "workspaceId",
+        "status",
+        "builtAt",
+        "summary",
+    }
+    assert set(vault_preview["properties"]) == {
+        "inventoryId",
+        "workspaceId",
+        "file",
+        "encoding",
+        "text",
+        "previewBytes",
+        "totalBytes",
+        "truncated",
+    }
 
     error_response = schema["paths"]["/api/v1/tasks/{task_id}"]["get"]["responses"]["404"]
     assert set(error_response["content"]) == {"application/problem+json"}

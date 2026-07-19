@@ -5,6 +5,7 @@ import { RunInspector } from "../features/runs/RunInspector";
 import { RepositorySummaryPanel } from "../features/repository/RepositorySummaryPanel";
 import { TaskInspector } from "../features/tasks/TaskInspector";
 import { TaskCreationPanel } from "../features/tasks/TaskCreationPanel";
+import { VaultPanel } from "../features/vault/VaultPanel";
 import { WorkspacesPanel } from "../features/workspaces/WorkspacesPanel";
 import { AppShell } from "../layout/AppShell";
 import { useActiveWorkspaceId } from "./useActiveWorkspaceId";
@@ -30,6 +31,12 @@ export function App() {
         </div>
         <div className="dashboard-grid__guard">
           <GuardPanel
+            key={activeWorkspaceId ?? "no-workspace"}
+            activeWorkspaceId={activeWorkspaceId}
+          />
+        </div>
+        <div className="dashboard-grid__vault">
+          <VaultPanel
             key={activeWorkspaceId ?? "no-workspace"}
             activeWorkspaceId={activeWorkspaceId}
           />

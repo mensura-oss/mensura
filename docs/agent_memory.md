@@ -5,7 +5,7 @@
 - Mensura is an AGPL-3.0 open-source, local-first and self-hostable agentic development platform for professional developers and teams.
 - It combines a desktop workspace (Studio), orchestration (Core), project memory (Vault), quality and policy gates (Guard), extensions (Hub), and optional voice control (Voice).
 - The product emphasizes reproducible agent runs, visible diffs and logs, human approval, mandatory checks, open MCP interoperability, and user-managed model providers.
-- Current implementation status: the repository has a runnable pnpm workspace, tested shared contracts, a verified minimal Mensura Core FastAPI service, and a verified Tauri/React Studio flow for workspace selection -> ready task -> queued run, read-only repository inspection, and manually triggered lint/test Guard results. Durable server persistence and agent execution remain unimplemented.
+- Current implementation status: the repository has a runnable pnpm workspace, tested shared contracts, a verified minimal Mensura Core FastAPI service, and a verified Tauri/React Studio flow for workspace selection -> ready task -> queued run, read-only repository inspection, deterministic Vault file inventory/preview, and manually triggered lint/test Guard results. Durable server persistence and agent execution remain unimplemented.
 
 ## Source Documents Read
 
@@ -124,6 +124,7 @@
 
 ## Current Status
 
+- Work cycle 7 is complete in the working tree from clean baseline commit `a893268`: Core has deterministic process-local Vault inventory and bounded safe text retrieval, and Studio has a compact active-workspace inventory/preview inspector.
 - Work cycle 6 is complete in the working tree from baseline commit `6552d2d`: Core has a manually triggered, bounded Ruff/pytest Guard runner and Studio has a compact active-workspace result panel.
 - Core v1 now includes tested replaceable read-only Git inspection and Guard execution adapters in addition to versioned resource routes, predictable RFC 9457 errors, replaceable in-memory storage, and OpenAPI.
 - Git history contains the initial license plus five completed incremental work-cycle commits before this cycle; it remains too short for meaningful code-hotspot inference.
@@ -135,6 +136,91 @@
 - Repository risk history is too small for meaningful hotspot or bug-magnet analysis; current risk is specification breadth and premature scaffolding.
 
 ## Completed Work Log
+
+### 2026-07-19 16:34 MSK — Start work cycle 7: deterministic Vault inventory
+
+- Files changed: `docs/agent_memory.md`.
+- Audit: confirmed a clean worktree at `a893268`; re-read the Vault requirements in the master spec, PRD, architecture, roadmap, API outline, setup guide, current journal, and the existing shared/Core/Studio adapter patterns. The seven-commit history has no bug magnets or firefighting commits; current hotspots are the expected journal, README, shared export, Studio client/App/styles, and test helper seams.
+- Contract boundary: add isolated Vault v1 models for a ready inventory snapshot, aggregate extension/language counts, deterministic file metadata, filtered file collections, and bounded UTF-8 preview metadata. Do not reuse Git status models or imply semantic relevance, chunks, embeddings, or persisted memory.
+- Inventory boundary: build manually from the stored workspace root; sort all paths deterministically; never follow symlinks; prune fixed generated/dependency/VCS directories; exclude sensitive names, large/generated artifacts, and non-regular entries; classify remaining files conservatively as UTF-8 text or binary; retain only the latest snapshot in a replaceable in-memory store.
+- Retrieval boundary: list snapshot metadata with optional case-insensitive path/name query and exact normalized extension filtering; preview only a path already present in the latest snapshot; resolve it inside the workspace again; refuse excluded, missing, changed-to-symlink, and binary targets; return at most 16 KiB of decoded UTF-8 with byte counts and an explicit truncation flag.
+- API boundary: use synchronous `POST /api/v1/workspaces/{workspace_id}/vault/inventory` for build/refresh, `GET .../vault/inventory` for the latest summary, `GET .../vault/files` for deterministic metadata, and `GET .../vault/files/content?path=...` for preview. Missing workspace stays the existing resource problem; Vault adds stable RFC 9457 identities for invalid roots, absent inventory, invalid/traversing paths, excluded paths, missing files, and binary preview refusal.
+- Studio boundary: one independent active-workspace TanStack Query panel with manual build/refresh, compact counts and language summary, bounded file list, explicit selection, metadata, and bounded preview. Inventory/preview problems remain local and do not disable repository, Guard, task, or run panels.
+- Explicitly deferred: embeddings, semantic search, Tree-sitter, chunking, graph memory, watchers, repository writes, Git-ignore interpretation, content search, full file browser/editor, background indexing, durable snapshots, and task/run context assembly.
+- Follow-up: define and verify the shared Vault wire contracts before adding filesystem traversal.
+
+### 2026-07-19 — Define and verify the Vault v1 shared contract
+
+- Files changed: `packages/shared-types/src/{vault,vault.test,index}.ts` and `docs/agent_memory.md`.
+- Defined: literal `ready` inventory state; conservative `text | binary` file kinds; snapshot identity/workspace/time; included/excluded/text/binary/byte aggregates; deterministic extension/language count arrays; file path/name/extension/language/kind/size metadata; filtered collection totals; and UTF-8 preview text/byte/truncation fields.
+- Isolation: Vault transport types live in `vault.ts` and do not extend Git diff metadata, Guard results, or task/run entities. The contract contains no embedding, score, chunk, syntax tree, graph, file mutation, or semantic-search field.
+- Verification: strict TypeScript checking and all 14 shared tests across four files pass; exact inventory-state and file-kind vocabularies are regression tested.
+- Follow-up: implement Core traversal, classification, latest-snapshot storage, retrieval, problems, and API/OpenAPI tests against this contract.
+
+### 2026-07-19 — Prepare the Core Vault inventory step
+
+- Files changed: `docs/agent_memory.md`.
+- Planned modules: isolate Pydantic Vault API models, fixed inventory rules/classifier, filesystem inventory adapter, lock-protected latest-snapshot repository, Vault application service, routers, and problem handlers. `VaultService` depends on the existing workspace repository plus replaceable inventory/store protocols; resource and Guard services remain unchanged.
+- Traversal rules: use sorted `os.scandir` recursion without following symlinks; exclude fixed case-insensitive directory names (`.git`, dependencies, virtual environments, caches, and common build outputs); exclude sensitive names/key material, generated/archive/binary artifact suffixes, files over 5 MiB, symlinks, sockets/devices, and unreadable entries. A pruned directory counts as one excluded entry.
+- Classification rules: keep included binary files as metadata but refuse preview. Known binary extensions, NUL bytes, invalid UTF-8, or a high control-character ratio classify conservatively as binary; otherwise classification is text. Language is a small extension/name lookup only, never parser inference.
+- Retrieval rules: inventory list filtering is a case-insensitive path substring plus normalized exact extension with a 1–500 result limit. Preview requires a safe normalized relative POSIX path present in the latest snapshot, revalidates containment/non-symlink/regular-file state, reads at most 16 KiB plus one byte, and refuses content that is or has become binary.
+- Test boundary: synthetic real directories cover deterministic sorting/counts, all required exclusions, language/extension counts, text/binary classification, preview truncation, traversal/absolute/excluded/binary/missing/refreshed-file errors, workspace/root/no-inventory problems, filters, safe media types, and exact OpenAPI surface.
+- Follow-up: implement and independently verify Core before adding any Studio code.
+
+### 2026-07-19 — Implement and verify Core Vault inventory and retrieval
+
+- Files changed: `services/core/src/mensura_core/{vault_models,vault_inventory,vault_repositories,vault_service,exceptions,main}.py`, `services/core/src/mensura_core/api/{dependencies,problems,router,routers/vault}.py`, `services/core/tests/{test_vault_api,test_openapi}.py`, and `docs/agent_memory.md`.
+- Adapter design: `VaultService` depends on the existing workspace repository, a `VaultInventoryBuilder` protocol, and a `VaultInventoryRepository` protocol. The default local builder owns read-only filesystem traversal/classification; the default lock-protected store keeps one immutable snapshot and item tuple per workspace. Routes depend only on `VaultService`.
+- Implemented rules: traversal uses deterministic case-folded path ordering and does not follow symlinks. It prunes VCS, Node/pnpm, Python virtual environment/cache, general cache, Next, build/dist/coverage/target/out/output directories; excludes sensitive environment/credential/key paths, OS metadata, compiled/archive artifacts, files over 5 MiB, symlinks, non-regular nodes, and unreadable entries; and counts every pruned or excluded entry once.
+- Classification: known media/document suffixes and NUL/invalid-UTF-8/control-heavy samples classify as binary; other readable samples classify as text. Binary items remain inventory metadata but cannot be previewed. A fixed small extension/name table labels common languages without parsing content.
+- API/storage: added build/refresh `POST .../vault/inventory` (`201`), latest summary `GET .../vault/inventory`, filtered metadata `GET .../vault/files`, and bounded preview `GET .../vault/files/content?path=...`. Each build receives a new UUID/time and atomically replaces the process-local latest record after successful traversal.
+- Retrieval safety: request paths must be canonical relative POSIX paths; absolute, backslash, dot-normalized, and parent traversal forms are rejected. Preview verifies every path component is not a symlink, resolves inside the current root, rechecks file/size/binary state, reads only 16 KiB plus one sentinel byte, safely handles an incomplete terminal UTF-8 code point, and reports exact preview/total byte counts and truncation.
+- RFC 9457 problems: `vault-root-invalid` (409), `vault-inventory-not-built` (404), `vault-path-invalid` (422), `vault-file-excluded` (403), `vault-binary-preview-refused` (415), and `vault-file-not-found` (404), while missing workspace remains `resource-not-found`.
+- Verification: Core Ruff lint/format passes and all 43 Python tests pass with warnings treated as errors. New tests cover deterministic real-directory inventory, every fixed directory rule, summaries, path/extension/limit filtering, refresh replacement, bounded text, binary and changed-to-binary refusal, sensitive/symlink refusal, traversal/absolute rejection, missing workspace/root/inventory/file, exact media types, and OpenAPI models/routes.
+- Follow-up: add the typed Studio client/query/mutation panel and independently verify selection, summary, list, preview, and local problem states.
+
+### 2026-07-19 — Prepare the Studio Vault inspector step
+
+- Files changed: `docs/agent_memory.md`.
+- Planned client/query boundary: add typed build/get/list/preview Core methods; workspace-scoped inventory and file-list query keys; a path-scoped preview key; and a manual build mutation that seeds the snapshot then invalidates metadata. No inventory data enters localStorage or a global client-state store.
+- Planned UI: no-selection guidance; neutral not-built state with `Build inventory`; visible building/refreshing state; ready summary counts and a short language breakdown; a scroll-bounded deterministic file button list; selected-file metadata; and separately loading/refused/bounded preview. Binary selection is inspectable metadata and should show a concise preview-unavailable state without issuing a request.
+- Failure isolation: inventory/list/build problems render inside Vault; preview problems render only in the inspector. The panel must not hide or disable repository, Guard, workspace, task, or run features.
+- Test boundary: typed URL/query encoding; no selection/no inventory; pending build then ready refresh; compact counts/languages/files; selection and bounded preview; binary no-request behavior; RFC 9457 build/list/preview errors; and App-level independence.
+- Follow-up: implement this one panel without routing, editor behavior, content search, virtualized tree, automatic indexing, or semantic controls.
+
+### 2026-07-19 — Implement and verify the Studio Vault panel
+
+- Files changed: `apps/studio/src/api/{coreClient,coreClient.test}.ts`, `apps/studio/src/app/{App,App.test}.tsx`, `apps/studio/src/app/queryClient.ts`, `apps/studio/src/features/vault/{VaultPanel,VaultPanel.test}.tsx`, `apps/studio/src/test/render.tsx`, `apps/studio/src/styles.css`, and `docs/agent_memory.md`.
+- Client/state: added typed build/get/list/preview methods with encoded workspace IDs, filters, and file paths; workspace inventory/list and path preview query keys; manual build mutation; immediate snapshot cache seeding; file-list invalidation; and removal of stale preview queries. Only selected path is component state.
+- UI: active-workspace-only Build/Refresh action, visible traversal pending state, neutral no-inventory guidance, five compact aggregate cells, a bounded language badge summary, scroll-bounded file buttons, file metadata inspector, separately loading text preview, byte/truncation evidence, and independent Problem Details rendering.
+- Binary behavior: binary files remain selectable and show path/kind/language/size metadata, but Studio makes no content request and states that text preview is unavailable. This avoids a predictable 415 round trip without hiding the item.
+- Isolation/scope: switching workspace remounts and clears the selection; refresh clears selection and preview cache; Vault failure does not affect any other panel. No search form, repository tree, editor, route, content search, local persistence, watcher, auto-build, semantic score, or global client-state library was added.
+- Verification: strict Studio TypeScript checking and all 36 tests across 12 files pass. New coverage verifies all four client URLs, neutral states, pending build then ready cache/list flow, counts/languages, text selection/preview, binary no-request behavior, local RFC 9457 preview refusal, and existing App task-flow independence.
+- Issue resolved: initial tests attempted file selection after summary readiness but before the independent metadata query completed, and one assertion ignored the intentional duplicate path in list plus inspector. Tests now await the accessible file button and assert both semantic locations rather than coupling queries.
+- Follow-up: document exact user-visible behavior and filtering limits, then execute full workspace/Core/native build plus live Core/release-Studio inventory and preview verification.
+
+### 2026-07-19 — Prepare seventh-cycle documentation and acceptance verification
+
+- Files changed: `docs/agent_memory.md`.
+- Documentation plan: update root/Core/Studio READMEs with all four endpoints, process-local refresh semantics, fixed exclusion/classification rules, 5 MiB inventory limit, 16 KiB UTF-8 preview cap, list filtering/limit, sensitive/binary refusals, Studio workflow, and explicit non-semantic/read-only scope.
+- Automated verification plan: run root `pnpm check`, Core Ruff/format and all tests with warnings as errors, Rust format, and `git diff --check`; inspect OpenAPI endpoint/model surface and scan production Vault code for filesystem write calls or traversal weaknesses.
+- Live HTTP plan: start fresh Uvicorn, create a Mensura-root workspace, confirm 404 before build, POST inventory, verify sorted metadata/filtering, preview this README, binary-refusal behavior against an available binary asset, and matching latest snapshot.
+- Native plan: build the final release Studio app/DMG, launch it against that same Core process, select the workspace, observe no-inventory/build pending/ready summary, select a text file, confirm bounded preview metadata, then stop both processes cleanly.
+- Evidence boundary: live file/count values describe the current working tree at build time and may change with generated/ignored local files that do not match fixed exclusions. Success proves deterministic local metadata and bounded retrieval, not semantic relevance, persisted indexing, complete secret detection, or OS sandboxing.
+- Follow-up: implement documentation, run the matrix, and record only observed results before committing.
+
+### 2026-07-19 16:55 MSK — Verify and complete the minimal Vault vertical slice
+
+- Files changed: shared Vault contracts/tests/exports; Core Vault models, rules/builder, store, service, routes, problems, wiring, OpenAPI/API tests, and README; Studio typed client/query/App integration, Vault panel/tests/styles, test client, and README; root README and `docs/agent_memory.md`.
+- Endpoints: added `POST` and `GET /api/v1/workspaces/{workspace_id}/vault/inventory`, `GET .../vault/files`, and `GET .../vault/files/content?path=...`. Core now exposes 14 HTTP operations across 12 paths including health and all previous resources.
+- Automated verification: root `pnpm check` passed strict shared/Studio typechecks, 14 shared tests, 36 Studio tests, production shared/frontend builds, and native `cargo check`; Core Ruff lint/format and all 43 Python tests passed with warnings as errors; Rust formatting, `git diff --check`, and a production Vault scan for filesystem writes/subprocesses passed.
+- Native build: final Studio code produced the optimized release binary, `Mensura Studio.app`, and the arm64 DMG through `pnpm studio:build`.
+- Live API result: fresh Core returned `404 application/problem+json` before build, then inventoried the current Mensura working tree as 144 included files, 21 excluded entries, 127 text files, 17 binary files, and 1,144,523 included bytes. Paths were deterministic; `.py` filtering returned 36 matches; README preview returned exact byte/truncation metadata; PNG preview returned `415 application/problem+json` with `vault-binary-preview-refused`.
+- Verification issue resolved: the first real inventory exposed repository-local `.pnpm-store` cache contents, `.DS_Store`, and pnpm database files as metadata. Added fixed `.pnpm-store`/`.cache` pruning plus OS-metadata exclusions and regression coverage; the rebuilt snapshot dropped from 158 to 144 files, removed those artifacts, and retained source/configuration paths.
+- Native Studio result: the release WebView restored/reconciled active workspace state, loaded the 144/21/127/17 summary, showed six language badges and 144 deterministic file buttons, selected `apps/studio/README.md`, displayed its Markdown metadata and 4.3 KiB bounded preview, selected a PNG and showed binary metadata without a preview request, then manually refreshed inventory and cleared stale selection. Core logged the WebView inventory/list/preview requests, refresh `POST 201`, and refreshed list `200`; Studio and Core stopped cleanly.
+- Working boundary: Vault reads only; one latest snapshot lives in process memory; listing returns at most 200 items in Studio (API maximum 500); preview is strict UTF-8 capped at 16 KiB; binary/sensitive/generated/large/unsafe paths are refused. Fixed rules are deterministic but do not interpret `.gitignore`, guarantee secret detection, or make a filesystem snapshot atomic against concurrent external changes.
+- Intentionally deferred: embeddings, semantic/content search, Tree-sitter, chunks, graph memory, watchers, repository writes, durable snapshots, full tree/editor UI, automatic indexing, branch-aware history, and task/run context assembly.
+- Next priority: add a task/run-linked, immutable context-pack slice in which the user selects inventoried files, Core captures their bounded metadata/previews under a stable manifest, and Studio reviews the exact context before any provider execution. This connects Vault to orchestration without inventing a fake agent engine.
 
 ### 2026-07-19 16:06 MSK — Start work cycle 6: minimal Guard runner
 
@@ -464,18 +550,18 @@
 - Task lifecycle rules that require review before approval and support revision/retry paths.
 - Run lifecycle rules that require checking and an approval checkpoint before completion.
 - Runtime plugin manifest validation for supported types and permissions, semantic versions, duplicate permissions, and unsafe entry paths.
-- Automated coverage for shared lifecycle, plugin validation, and Guard wire-contract behavior (12 passing tests).
-- Python 3.12 FastAPI Core service with enabled OpenAPI and ten implemented HTTP endpoints.
+- Automated coverage for shared lifecycle, plugin validation, Guard, and Vault wire-contract behavior (14 passing tests).
+- Python 3.12 FastAPI Core service with enabled OpenAPI and fourteen implemented HTTP endpoints.
 - Workspace creation/listing with exact-root conflict detection in a process-local repository.
 - Task creation/retrieval tied to an existing workspace; created tasks begin in `ready` status.
 - Placeholder run creation/retrieval; created runs remain `queued` and perform no orchestration or side effects.
 - RFC 9457 `application/problem+json` responses for resource misses, conflicts, request validation, framework HTTP errors, and generic internal failures.
 - CamelCase JSON contracts aligned with TypeScript Workspace/Task ownership and documented in OpenAPI.
-- Thirty-six passing Core service/runner/API/OpenAPI/Git-adapter tests plus successful real-Uvicorn repository inspection and Guard execution.
+- Forty-three passing Core service/runner/API/OpenAPI/Git/Vault-adapter tests plus successful real-Uvicorn repository inspection, Guard execution, inventory, filtering, and preview retrieval.
 - Tauri 2 desktop Studio with React 19, Vite 8, a single resizable window, desktop app icons, CSP, and a local-Core-only native HTTP capability.
 - TanStack Query-backed Core health polling, workspace list/create behavior, task lookup, and run lookup with explicit loading, empty, success, connection-error, and RFC 9457 error states.
 - Shared Health, workspace transport, and Problem Details contracts aligned with Core's camelCase responses and nullable fields.
-- Twenty-nine passing Studio client/component/acceptance tests and successful native release binary, macOS `.app`, and DMG builds.
+- Thirty-six passing Studio client/component/acceptance tests and successful native release binary, macOS `.app`, and DMG builds.
 - Verified live desktop connectivity from the release Tauri WebView to Core health and workspace endpoints.
 - Persisted active workspace selection with stale-ID reconciliation after Core restart.
 - Accessible active-workspace task creation with client validation, RFC 9457 failures, value preservation on failure, and immediate ready-task details.
@@ -490,13 +576,18 @@
 - Workspace-scoped Guard create/latest endpoints with dedicated RFC 9457 problems for missing or invalid configuration, unsupported roots, execution startup failure, overlapping runs, and absent history.
 - Compact active-workspace Studio Guard panel with manual execution, visible pending state, overall and per-check status, collapsed bounded output, neutral no-history state, and independent RFC 9457 failure handling.
 - Verified live release-Studio -> Core -> configured Ruff/pytest -> normalized Guard result -> refreshed Studio result flow on the Mensura repository.
+- Isolated shared Vault v1 contracts for ready snapshots, deterministic metadata, summary counts, file collections, and bounded UTF-8 preview evidence.
+- Replaceable Core Vault filesystem-builder/latest-store boundaries with fixed exclusions, no-symlink deterministic traversal, conservative text/binary classification, small language mapping, path/extension filters, and no write/subprocess operations.
+- Workspace-scoped Vault build/latest/list/preview endpoints with stable RFC 9457 problems for invalid roots, absent inventory, invalid or excluded paths, binary preview refusal, and missing files.
+- Compact active-workspace Studio Vault panel with manual build/refresh, aggregate/language summary, bounded deterministic file list, metadata inspector, bounded text preview, binary no-request state, and isolated errors.
+- Verified live release-Studio -> Core -> Mensura inventory -> file metadata -> safe preview -> refresh flow, including discovery and removal of local package-cache/OS artifacts from fixed rules.
 
 ## Pending Tasks
 
 ### MVP
 
-1. Add deterministic Vault repository file inventory and basic retrieval; defer embeddings until the ingestion contract is stable.
-2. Implement one observable execution flow: queued run -> explicit provider/runner adapter -> produce safe diff metadata -> execute Guard -> review -> approve/reject.
+1. Add task/run-linked immutable context packs from explicitly selected Vault files, with exact bounded content and a compact Studio review step.
+2. Implement one observable execution flow: queued run -> reviewed context pack -> explicit provider/runner adapter -> safe diff metadata -> Guard -> review -> approve/reject.
 3. Add Docker Compose only for dependencies required by the working flow, plus CI for format, typecheck, tests, and builds.
 4. Replace temporary in-memory adapters with durable storage where acceptance criteria require restart-safe history.
 
@@ -594,12 +685,19 @@
 - Alternatives considered: shell command strings, toolchain auto-discovery, arbitrary executables, a background queue, separate Guard service, raw unbounded logs, and immediate policy packs. Rejected or deferred because they widen trust, add hidden behavior or infrastructure, and are unnecessary for a manually triggered two-check MVP.
 - Consequences: configuration is trusted executable project input; Ruff/pytest may execute repository code with the Core process's filesystem/network permissions. Each check is time-bounded, output capture is bounded, overlapping runs for one workspace are rejected, only the latest completed run survives in memory, and transport/storage/runner adapters can later be replaced without changing the v1 response shape.
 
+### Deterministic, read-only Vault inventory
+
+- Decision: use a replaceable local filesystem builder with fixed checked-in rules, conservative sample-based text/binary classification, an in-memory latest-snapshot store, deterministic metadata listing, and 16 KiB strict UTF-8 previews tied to inventoried paths.
+- Reason: future execution needs explicit inspectable context now, while parsers, embeddings, watchers, and databases would obscure whether basic inclusion, containment, and retrieval contracts are correct. Fixed rules make the same tree explainable without shelling out or interpreting project commands.
+- Alternatives considered: Git tracked-file enumeration, `.gitignore` libraries, content/MIME discovery dependencies, hashing every file, SQLite, background watchers, Tree-sitter chunks, embeddings, and returning full text. Deferred because they add policy, cost, durability, concurrency, or semantic assumptions beyond a minimal inventory; Git-only enumeration would also hide safe untracked context.
+- Consequences: one pruned directory counts once; the inventory is not an atomic filesystem snapshot; known safe untracked files can appear; fixed exclusions require maintenance as real repositories expose new local artifacts; language labels are shallow; only one latest record survives per workspace; preview revalidates path containment/symlinks/current binary state and never writes files.
+
 ## Open Questions
 
 - Which pagination and authentication contracts should extend the implemented Core v1 resource/error schemas?
 - Should local MVP persistence use SQLite before PostgreSQL, or should Dockerized PostgreSQL be required from the first Core service?
 - Which model provider should power the first non-stub run, and how should BYOK credentials be stored on each platform?
 - What exact sandbox guarantees are required for local command execution on macOS, Linux, and Windows?
-- Which file types, ignore rules, chunking rules, and embedding provider define the first Vault index?
+- Which project-specific ignore mechanism should extend the fixed Vault rules before team-scale indexing, and when should hashing/durable branch-aware snapshots become necessary?
 - How are plugin signatures rooted and verified, and which permissions are allowed for the first local plugin loader?
 - Are the `[cite:…]` markers in the specifications backed by a source bibliography that should be added to the repository?

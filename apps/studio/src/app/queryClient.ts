@@ -20,6 +20,12 @@ export const queryKeys = {
   health: ["core", "health"] as const,
   run: (runId: string) => ["core", "runs", runId] as const,
   task: (taskId: string) => ["core", "tasks", taskId] as const,
+  vaultFilePreview: (workspaceId: string, path: string) =>
+    ["core", "workspaces", workspaceId, "vault", "files", "content", path] as const,
+  vaultFiles: (workspaceId: string) =>
+    ["core", "workspaces", workspaceId, "vault", "files"] as const,
+  vaultInventory: (workspaceId: string) =>
+    ["core", "workspaces", workspaceId, "vault", "inventory"] as const,
   workspaceRepository: (workspaceId: string) =>
     ["core", "workspaces", workspaceId, "repository"] as const,
   workspaces: ["core", "workspaces"] as const,

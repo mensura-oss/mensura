@@ -11,6 +11,12 @@ from mensura_core.guard_runner import GuardCommandRunner, SubprocessGuardCommand
 from mensura_core.guard_service import GuardService
 from mensura_core.repositories import CoreRepository, InMemoryCoreRepository
 from mensura_core.service import CoreService
+from mensura_core.vault_inventory import LocalVaultInventoryBuilder, VaultInventoryBuilder
+from mensura_core.vault_repositories import (
+    InMemoryVaultInventoryRepository,
+    VaultInventoryRepository,
+)
+from mensura_core.vault_service import VaultService
 
 
 def create_app(
@@ -19,6 +25,8 @@ def create_app(
     guard_configuration_loader: GuardConfigurationLoader | None = None,
     guard_command_runner: GuardCommandRunner | None = None,
     guard_run_repository: GuardRunRepository | None = None,
+    vault_inventory_builder: VaultInventoryBuilder | None = None,
+    vault_inventory_repository: VaultInventoryRepository | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Mensura Core API",
@@ -37,6 +45,11 @@ def create_app(
         guard_configuration_loader or JsonGuardConfigurationLoader(),
         guard_command_runner or SubprocessGuardCommandRunner(),
         guard_run_repository or InMemoryGuardRunRepository(),
+    )
+    app.state.vault_service = VaultService(
+        core_repository,
+        vault_inventory_builder or LocalVaultInventoryBuilder(),
+        vault_inventory_repository or InMemoryVaultInventoryRepository(),
     )
     install_problem_handlers(app)
     app.include_router(health_router)
