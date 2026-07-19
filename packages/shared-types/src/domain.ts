@@ -16,6 +16,14 @@ export const AGENT_ROLES = [
 
 export type AgentRole = (typeof AGENT_ROLES)[number];
 
+export interface Workspace {
+  id: EntityId;
+  name: string;
+  rootPath: string;
+  createdAt: IsoDateTime;
+  updatedAt: IsoDateTime;
+}
+
 export const TASK_STATUSES = [
   "draft",
   "ready",
@@ -31,7 +39,8 @@ export type TaskStatus = (typeof TASK_STATUSES)[number];
 
 export interface Task {
   id: EntityId;
-  projectId: EntityId;
+  workspaceId: EntityId;
+  projectId?: EntityId;
   title: string;
   description: string;
   status: TaskStatus;

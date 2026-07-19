@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mensura-core"
+version = "0.1.0"
+description = "Versioned HTTP API and execution boundary for Mensura"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "AGPL-3.0-only" }
+dependencies = [
+  "fastapi>=0.116,<1",
+  "pydantic>=2.11,<3",
+  "uvicorn>=0.35,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx2>=2.7,<3",
+  "pytest>=8.4,<9",
+  "ruff>=0.12,<1",
+]
+
+[project.scripts]
+mensura-core = "mensura_core.main:run"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mensura_core"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]

@@ -5,7 +5,7 @@
 - Mensura is an AGPL-3.0 open-source, local-first and self-hostable agentic development platform for professional developers and teams.
 - It combines a desktop workspace (Studio), orchestration (Core), project memory (Vault), quality and policy gates (Guard), extensions (Hub), and optional voice control (Voice).
 - The product emphasizes reproducible agent runs, visible diffs and logs, human approval, mandatory checks, open MCP interoperability, and user-managed model providers.
-- Current implementation status: the repository now has a runnable pnpm workspace and a tested shared-contracts package; Studio and backend services remain unimplemented.
+- Current implementation status: the repository has a runnable pnpm workspace, a tested shared-contracts package, and a verified minimal Mensura Core FastAPI service. Studio, persistence, and agent execution remain unimplemented.
 
 ## Source Documents Read
 
@@ -124,12 +124,14 @@
 
 ## Current Status
 
-- Git history: one initial commit containing only `LICENSE`; three local/remote branch references; no prior implementation history or code hotspots.
-- Documentation: ten complete project specifications exist as untracked source files at the start of this cycle.
+- Work cycle 2 implementation and verification are complete; the logical Git commit is pending.
+- Core v1 is verified under Python 3.12 with versioned resource routes, predictable errors, replaceable in-memory storage, OpenAPI, and tests. Orchestration and database integration remain explicitly deferred.
+- Git history: the initial license commit plus the committed foundation from work cycle 1; no product implementation history is deep enough for meaningful code hotspots yet.
+- Documentation: ten project specifications, the root README, and this execution journal are tracked.
 - Code at audit time: no applications, services, packages, tests, dependency manifests, CI, or local run scripts existed.
 - Code now: pnpm workspace commands, strict shared TypeScript configuration, and `@mensura/shared-types` with domain contracts, guarded task/run transitions, plugin permissions, and runtime manifest validation.
 - Toolchain observed locally: Node 22.23.1, pnpm 11.13.1, Rust 1.97.1, Docker 29.6.1, and Docker Compose 5.3.0.
-- Python is currently 3.9.6 and does not meet the documented Python 3.12+ prerequisite; FastAPI and `uv` are not installed.
+- The default `python3` is 3.9.6, but Homebrew Python 3.12 is available at `/opt/homebrew/bin/python3.12`; FastAPI is not installed globally and Core will use a service-local virtual environment.
 - Repository risk history is too small for meaningful hotspot or bug-magnet analysis; current risk is specification breadth and premature scaffolding.
 
 ## Completed Work Log
@@ -153,6 +155,37 @@
 - Verification: `pnpm check` passed TypeScript checking, 10 Vitest tests in 2 files, and package compilation.
 - Follow-up: define the minimal versioned Core transport contracts and implement a Python 3.12 FastAPI service without expanding into Vault, Guard execution, or Studio yet.
 
+### 2026-07-19 — Start work cycle 2: minimal Core HTTP API
+
+- Files changed: `docs/agent_memory.md`.
+- Planned: revalidate the API and shared lifecycle contracts, define the v1 transport and RFC 9457 error shapes, then implement a Python 3.12 FastAPI service with replaceable in-memory repositories and success/error tests.
+- Explicitly deferred: database integration, provider calls, agent orchestration, Guard execution, SSE unless the base HTTP contract is complete and stable.
+
+### 2026-07-19 — Define the Core HTTP v1 contract
+
+- Files changed: `docs/agent_memory.md`.
+- Defined: unversioned `GET /health`; versioned workspace, task, and run endpoints under `/api/v1`; camelCase JSON fields; UUID identifiers; UTC timestamps; typed collection envelopes; `201 Created`, with `Location` when the created resource has a GET endpoint in this API slice.
+- Error contract: RFC 9457 `application/problem+json` with `type`, `title`, `status`, occurrence-specific `detail`, and request-path `instance`; validation problems add an `errors` extension containing `detail` and JSON Pointer fields.
+- Storage contract: service methods depend on repository protocols; the first implementation is process-local memory and must not claim restart durability.
+- Run creation contract: creates a `queued` run only. It does not call a provider, mutate files, execute Guard, or simulate orchestration progress.
+- Deferred: SSE run events, pagination cursors, authentication, database persistence, project resources, task mutation, and real execution.
+
+### 2026-07-19 — Implement the unverified Core v1 service slice
+
+- Files changed: `services/core/pyproject.toml`, `services/core/README.md`, `services/core/src/mensura_core/**`, `services/core/tests/**`, `packages/shared-types/src/domain.ts`, `README.md`, `docs/agent_memory.md`.
+- Implemented in code: FastAPI bootstrap and OpenAPI, `/health`, v1 workspace/task/run routers, strict camelCase Pydantic contracts, repository protocol and lock-protected in-memory adapter, Core application service, RFC 9457 handlers, and success/error/OpenAPI tests.
+- Shared contract alignment: added the Workspace type and made workspace ownership explicit on Task while retaining optional future `projectId`.
+- Verification status: pending. No functionality from this step belongs in `Implemented Functionality` until Python 3.12 lint/tests and the existing pnpm checks pass.
+
+### 2026-07-19 14:49 MSK — Verify and complete Core HTTP v1
+
+- Files changed: `.gitignore`, `README.md`, `docs/agent_memory.md`, `packages/shared-types/src/domain.ts`, `services/core/**`.
+- Implemented: seven requested HTTP endpoints; camelCase UUID/UTC resource contracts; typed success responses; RFC 9457 errors for domain, validation, framework, and unexpected failures; replaceable lock-protected in-memory storage; OpenAPI and service documentation.
+- Tests: 12 Python API/OpenAPI tests cover health, workspace list/create, task create/get, run create/get, missing resources, missing parent workspace, conflicts, body/path validation, framework 404, sanitized unexpected failures, camelCase schema, exact problem media type, and the endpoint surface.
+- Verification: Python 3.12.13; Ruff lint and format check passed; Pytest passed 12 tests with warnings treated as errors; `pnpm check` passed TypeScript checking, 10 existing tests, and build.
+- Runtime smoke test: Uvicorn served `/health` as `200 application/json` and a missing task as `404 application/problem+json`; the server shut down cleanly.
+- Follow-up: build the minimal Studio shell/client against the documented OpenAPI surface, or first add a generated/client contract workflow if Studio implementation requires it.
+
 ## Implemented Functionality
 
 - Persistent repository-local project memory and execution journal.
@@ -162,20 +195,25 @@
 - Run lifecycle rules that require checking and an approval checkpoint before completion.
 - Runtime plugin manifest validation for supported types and permissions, semantic versions, duplicate permissions, and unsafe entry paths.
 - Automated coverage for the implemented lifecycle and plugin validation behavior (10 passing tests).
+- Python 3.12 FastAPI Core service with enabled OpenAPI and seven implemented HTTP endpoints.
+- Workspace creation/listing with exact-root conflict detection in a process-local repository.
+- Task creation/retrieval tied to an existing workspace; created tasks begin in `ready` status.
+- Placeholder run creation/retrieval; created runs remain `queued` and perform no orchestration or side effects.
+- RFC 9457 `application/problem+json` responses for resource misses, conflicts, request validation, framework HTTP errors, and generic internal failures.
+- CamelCase JSON contracts aligned with TypeScript Workspace/Task ownership and documented in OpenAPI.
+- Twelve passing Core API/OpenAPI tests plus a successful real-Uvicorn smoke test.
 
 ## Pending Tasks
 
 ### MVP
 
-1. Define the minimum versioned Core HTTP/error/event contracts from the shared domain model.
-2. Create a runnable FastAPI Core service with health, workspace, task, and in-memory/local-persistence run endpoints; document Python 3.12 setup.
-3. Create a minimal Tauri/React Studio shell that connects to Core and shows service/run state.
-4. Add local Git repository inspection and safe diff generation behind a Core adapter.
-5. Add the first Guard runner for configured lint/test commands with structured, blocking results.
-6. Add deterministic Vault repository indexing and basic retrieval; defer embeddings until the ingestion contract is stable.
-7. Implement one observable task flow: create task -> run explicit stub/provider adapter -> produce diff -> execute Guard -> review -> approve/reject.
-8. Add Docker Compose only for dependencies required by the working flow, plus CI for format, typecheck, tests, and builds.
-9. Replace temporary local/in-memory adapters with durable storage where acceptance criteria require restart-safe history.
+1. Create a minimal Tauri/React Studio shell that connects to Core and shows service/workspace/task/run state.
+2. Add local Git repository inspection and safe diff generation behind a Core adapter.
+3. Add the first Guard runner for configured lint/test commands with structured, blocking results.
+4. Add deterministic Vault repository indexing and basic retrieval; defer embeddings until the ingestion contract is stable.
+5. Implement one observable task flow: create task -> run explicit stub/provider adapter -> produce diff -> execute Guard -> review -> approve/reject.
+6. Add Docker Compose only for dependencies required by the working flow, plus CI for format, typecheck, tests, and builds.
+7. Replace temporary in-memory adapters with durable storage where acceptance criteria require restart-safe history.
 
 ### Post-MVP
 
@@ -222,9 +260,30 @@
 - Alternatives considered: Zod or JSON Schema generation; deferred until Core transport schemas establish whether cross-language schema generation is needed.
 - Consequences: validators must remain exhaustively tested; adopt a schema tool later if manual TypeScript/Python contract parity becomes error-prone.
 
+### Core HTTP v1 transport contract
+
+- Decision: expose `/health` outside the API version and all domain endpoints under `/api/v1`; use camelCase JSON, UUID identifiers, UTC timestamps, collection envelopes, and explicit response models. Created Task and Run responses include `Location`; Workspace does not until an item GET route exists.
+- Reason: health probes are operational rather than domain-versioned, while Studio-facing resources need a stable namespace and direct alignment with TypeScript conventions.
+- Alternatives considered: snake_case wire fields and bare arrays; rejected because they create client translation work and leave no stable place for collection metadata.
+- Consequences: Python uses snake_case internally through Pydantic aliases; OpenAPI documents camelCase; future pagination can extend collection envelopes without replacing response shapes.
+
+### RFC 9457 problem details
+
+- Decision: every HTTP error, including request validation and framework 404/405 responses, uses `application/problem+json`. Mensura-specific problem identities use stable `urn:mensura:problem:*` URIs until resolvable public problem documentation exists.
+- Reason: one machine-readable contract avoids FastAPI's default error shape leaking into part of the API and follows the requested standard without claiming an unavailable public documentation host.
+- Alternatives considered: FastAPI default `{detail: ...}` errors and fictional HTTPS problem URLs; rejected because the former is inconsistent and the latter would imply resolvable documentation that does not exist.
+- Consequences: handlers must preserve agreement between HTTP status and the `status` member, avoid internal debugging details, and test the exact media type and validation extension.
+
+### In-memory Core repositories
+
+- Decision: place repository protocols between routers/service logic and a lock-protected in-memory implementation.
+- Reason: the cycle requires runnable behavior but explicitly defers database integration.
+- Alternatives considered: SQLite or PostgreSQL now; deferred until resource and migration contracts are validated by the minimal API.
+- Consequences: all data disappears on restart and the README/OpenAPI must state that limitation; a durable adapter can replace storage without changing routes.
+
 ## Open Questions
 
-- What are the versioned request/response schemas, error envelope, pagination rules, and authentication model for the API outline?
+- Which pagination and authentication contracts should extend the implemented Core v1 resource/error schemas?
 - Should local MVP persistence use SQLite before PostgreSQL, or should Dockerized PostgreSQL be required from the first Core service?
 - Which model provider should power the first non-stub run, and how should BYOK credentials be stored on each platform?
 - What exact sandbox guarantees are required for local command execution on macOS, Linux, and Windows?

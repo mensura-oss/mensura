@@ -2,11 +2,12 @@
 
 Mensura is an open-source, local-first and self-hostable agentic development platform. It is intended to combine a desktop developer workspace, controlled agent execution, durable project memory, mandatory quality gates, and an open plugin ecosystem.
 
-The repository is at the foundation stage. The current runnable component is `@mensura/shared-types`, which defines and tests the domain state transitions and plugin manifest validation that future Studio and service modules will share. Product behavior beyond those contracts is planned, not yet implemented.
+The repository is at the foundation stage. The current runnable components are `@mensura/shared-types` and the minimal Python 3.12 Mensura Core HTTP API. Core currently stores workspaces, tasks, and queued placeholder runs in process memory; it does not orchestrate agents or persist data across restarts.
 
 ## Repository map
 
 - `packages/shared-types`: shared domain contracts, state machines, and runtime plugin manifest validation.
+- `services/core`: versioned FastAPI resource contracts, RFC 9457 errors, in-memory repositories, and API tests.
 - `docs/agent_memory.md`: current architecture, audit, implementation journal, decisions, and ordered next tasks.
 - `mensura_*.md`: product, architecture, API, module, roadmap, and setup source specifications.
 - `LICENSE`: GNU AGPL v3.
@@ -27,7 +28,7 @@ pnpm install
 pnpm check
 ```
 
-`pnpm check` typechecks, tests, and builds every implemented workspace package. A clean run is the current repository health check.
+`pnpm check` typechecks, tests, and builds the JavaScript workspace. Core has a separate Python 3.12 environment and check documented in `services/core/README.md`.
 
 ## Working principles
 
@@ -37,6 +38,6 @@ pnpm check
 - Update `docs/agent_memory.md` after every meaningful implementation step.
 - Preserve human review, structured logs, and Guard checks in task completion flows.
 
-## Next implementation target
+## Core API
 
-Define the minimum versioned Core API contracts, then create a Python 3.12 FastAPI service with health and local workspace/task/run behavior. The service should consume the same domain state model represented by `@mensura/shared-types` rather than inventing an incompatible lifecycle.
+See `services/core/README.md` for Python 3.12 setup, tests, run commands, implemented endpoints, and the current in-memory limitation.

@@ -1,0 +1,70 @@
+from collections.abc import Sequence
+from threading import RLock
+from typing import Protocol
+from uuid import UUID
+
+from mensura_core.models import Run, Task, Workspace
+
+
+class DuplicateWorkspaceRootError(Exception):
+    """Raised when a repository cannot preserve unique workspace roots."""
+
+
+class CoreRepository(Protocol):
+    def list_workspaces(self) -> Sequence[Workspace]: ...
+
+    def get_workspace(self, workspace_id: UUID) -> Workspace | None: ...
+
+    def add_workspace(self, workspace: Workspace) -> None: ...
+
+    def get_task(self, task_id: UUID) -> Task | None: ...
+
+    def add_task(self, task: Task) -> None: ...
+
+    def get_run(self, run_id: UUID) -> Run | None: ...
+
+    def add_run(self, run: Run) -> None: ...
+
+
+class InMemoryCoreRepository:
+    """Process-local repository adapter; replaceable without changing HTTP routes."""
+
+    def __init__(self) -> None:
+        self._workspaces: dict[UUID, Workspace] = {}
+        self._workspace_ids_by_root: dict[str, UUID] = {}
+        self._tasks: dict[UUID, Task] = {}
+        self._runs: dict[UUID, Run] = {}
+        self._lock = RLock()
+
+    def list_workspaces(self) -> Sequence[Workspace]:
+        with self._lock:
+            return tuple(
+                sorted(self._workspaces.values(), key=lambda workspace: workspace.created_at)
+            )
+
+    def get_workspace(self, workspace_id: UUID) -> Workspace | None:
+        with self._lock:
+            return self._workspaces.get(workspace_id)
+
+    def add_workspace(self, workspace: Workspace) -> None:
+        with self._lock:
+            if workspace.root_path in self._workspace_ids_by_root:
+                raise DuplicateWorkspaceRootError(workspace.root_path)
+            self._workspaces[workspace.id] = workspace
+            self._workspace_ids_by_root[workspace.root_path] = workspace.id
+
+    def get_task(self, task_id: UUID) -> Task | None:
+        with self._lock:
+            return self._tasks.get(task_id)
+
+    def add_task(self, task: Task) -> None:
+        with self._lock:
+            self._tasks[task.id] = task
+
+    def get_run(self, run_id: UUID) -> Run | None:
+        with self._lock:
+            return self._runs.get(run_id)
+
+    def add_run(self, run: Run) -> None:
+        with self._lock:
+            self._runs[run.id] = run
