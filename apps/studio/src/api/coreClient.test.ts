@@ -219,4 +219,36 @@ describe("Core client", () => {
       undefined,
     );
   });
+
+  it("creates, lists, and retrieves immutable context packs", async () => {
+    const fetcher = vi.fn(() => Promise.resolve(Response.json({ items: [], total: 0 })));
+    const client = createCoreClient({ baseUrl: "http://core.test", fetcher });
+    const workspaceId = "workspace/id";
+    const packId = `sha256:${"a".repeat(64)}`;
+
+    await client.createContextPack(workspaceId, { paths: ["src/main.py"] });
+    expect(fetcher).toHaveBeenNthCalledWith(
+      1,
+      "http://core.test/api/v1/workspaces/workspace%2Fid/context-packs",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paths: ["src/main.py"] }),
+      },
+    );
+
+    await client.listContextPacks(workspaceId);
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      "http://core.test/api/v1/workspaces/workspace%2Fid/context-packs",
+      undefined,
+    );
+
+    await client.getContextPack(workspaceId, packId);
+    expect(fetcher).toHaveBeenNthCalledWith(
+      3,
+      `http://core.test/api/v1/workspaces/workspace%2Fid/context-packs/${encodeURIComponent(packId)}`,
+      undefined,
+    );
+  });
 });

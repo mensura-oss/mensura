@@ -14,6 +14,8 @@ def test_openapi_exposes_the_implemented_v1_contract(client: TestClient) -> None
         "/api/v1/workspaces/{workspace_id}/vault/inventory",
         "/api/v1/workspaces/{workspace_id}/vault/files",
         "/api/v1/workspaces/{workspace_id}/vault/files/content",
+        "/api/v1/workspaces/{workspace_id}/context-packs",
+        "/api/v1/workspaces/{workspace_id}/context-packs/{context_pack_id}",
         "/api/v1/tasks/{task_id}",
         "/api/v1/tasks",
         "/api/v1/tasks/{task_id}/runs",
@@ -29,6 +31,8 @@ def test_openapi_documents_camel_case_and_problem_media_type(client: TestClient)
     guard_run = schema["components"]["schemas"]["GuardRunResponse"]
     vault_inventory = schema["components"]["schemas"]["VaultInventorySnapshot"]
     vault_preview = schema["components"]["schemas"]["VaultFilePreview"]
+    context_pack = schema["components"]["schemas"]["ContextPackManifest"]
+    context_pack_create = schema["components"]["schemas"]["CreateContextPackRequest"]
 
     assert set(workspace_create["properties"]) == {"name", "rootPath"}
     assert "workspaceId" in task["properties"]
@@ -66,6 +70,17 @@ def test_openapi_documents_camel_case_and_problem_media_type(client: TestClient)
         "previewBytes",
         "totalBytes",
         "truncated",
+    }
+    assert set(context_pack_create["properties"]) == {"paths"}
+    assert set(context_pack["properties"]) == {
+        "id",
+        "digest",
+        "workspaceId",
+        "inventoryId",
+        "schemaVersion",
+        "summary",
+        "limits",
+        "files",
     }
 
     error_response = schema["paths"]["/api/v1/tasks/{task_id}"]["get"]["responses"]["404"]

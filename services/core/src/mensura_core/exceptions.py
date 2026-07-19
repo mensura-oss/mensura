@@ -108,3 +108,30 @@ class VaultBinaryPreviewError(VaultError):
 class VaultFileNotFoundError(VaultError):
     def __init__(self, path: str) -> None:
         super().__init__(f"File '{path}' does not exist in the latest Vault inventory.")
+
+
+class ContextPackError(CoreError):
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)
+
+
+class ContextPackInvalidSelectionError(ContextPackError):
+    pass
+
+
+class ContextPackTooLargeError(ContextPackError):
+    pass
+
+
+class ContextPackFileChangedError(ContextPackError):
+    def __init__(self, path: str) -> None:
+        super().__init__(
+            f"File '{path}' changed or became unavailable after the latest Vault inventory. "
+            "Refresh the inventory before creating a context pack."
+        )
+
+
+class ContextPackNotFoundError(ContextPackError):
+    def __init__(self, context_pack_id: str) -> None:
+        super().__init__(f"Context pack '{context_pack_id}' was not found in this workspace.")

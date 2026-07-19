@@ -9,6 +9,10 @@ from pydantic import BaseModel, ConfigDict
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from mensura_core.exceptions import (
+    ContextPackFileChangedError,
+    ContextPackInvalidSelectionError,
+    ContextPackNotFoundError,
+    ContextPackTooLargeError,
     GuardConfigurationInvalidError,
     GuardConfigurationNotFoundError,
     GuardExecutionError,
@@ -49,6 +53,10 @@ VAULT_PATH_INVALID_TYPE = "urn:mensura:problem:vault-path-invalid"
 VAULT_FILE_EXCLUDED_TYPE = "urn:mensura:problem:vault-file-excluded"
 VAULT_BINARY_PREVIEW_TYPE = "urn:mensura:problem:vault-binary-preview-refused"
 VAULT_FILE_NOT_FOUND_TYPE = "urn:mensura:problem:vault-file-not-found"
+CONTEXT_PACK_INVALID_SELECTION_TYPE = "urn:mensura:problem:context-pack-invalid-selection"
+CONTEXT_PACK_TOO_LARGE_TYPE = "urn:mensura:problem:context-pack-too-large"
+CONTEXT_PACK_FILE_CHANGED_TYPE = "urn:mensura:problem:context-pack-file-changed"
+CONTEXT_PACK_NOT_FOUND_TYPE = "urn:mensura:problem:context-pack-not-found"
 
 
 class InvalidParameter(BaseModel):
@@ -308,6 +316,54 @@ def install_problem_handlers(app: FastAPI) -> None:
             detail=error.detail,
         )
 
+    @app.exception_handler(ContextPackInvalidSelectionError)
+    async def context_pack_invalid_selection_handler(
+        request: Request, error: ContextPackInvalidSelectionError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=422,
+            problem_type=CONTEXT_PACK_INVALID_SELECTION_TYPE,
+            title="Invalid context-pack selection",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ContextPackTooLargeError)
+    async def context_pack_too_large_handler(
+        request: Request, error: ContextPackTooLargeError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=413,
+            problem_type=CONTEXT_PACK_TOO_LARGE_TYPE,
+            title="Context pack is too large",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ContextPackFileChangedError)
+    async def context_pack_file_changed_handler(
+        request: Request, error: ContextPackFileChangedError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=CONTEXT_PACK_FILE_CHANGED_TYPE,
+            title="Context-pack file changed",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ContextPackNotFoundError)
+    async def context_pack_not_found_handler(
+        request: Request, error: ContextPackNotFoundError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=404,
+            problem_type=CONTEXT_PACK_NOT_FOUND_TYPE,
+            title="Context pack not found",
+            detail=error.detail,
+        )
+
     @app.exception_handler(RequestValidationError)
     async def request_validation_handler(
         request: Request, error: RequestValidationError
@@ -373,3 +429,4 @@ REPOSITORY_INVALID_RESPONSE = problem_response(422, "The workspace root is not a
 GUARD_EXECUTION_RESPONSE = problem_response(500, "A configured Guard command could not start.")
 FORBIDDEN_RESPONSE = problem_response(403, "The requested path is excluded from Vault access.")
 UNSUPPORTED_MEDIA_RESPONSE = problem_response(415, "The requested file is not previewable text.")
+PAYLOAD_TOO_LARGE_RESPONSE = problem_response(413, "The context-pack selection exceeds a limit.")

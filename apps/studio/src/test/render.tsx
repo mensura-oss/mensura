@@ -11,11 +11,13 @@ export function createTestClient(
   return {
     baseUrl: "http://127.0.0.1:8000",
     buildVaultInventory: () => Promise.reject(new Error("Not implemented in test")),
+    createContextPack: () => Promise.reject(new Error("Not implemented in test")),
     createGuardRun: () => Promise.reject(new Error("Not implemented in test")),
     createRun: () => Promise.reject(new Error("Not implemented in test")),
     createTask: () => Promise.reject(new Error("Not implemented in test")),
     createWorkspace: () => Promise.reject(new Error("Not implemented in test")),
     getHealth: () => Promise.reject(new Error("Not implemented in test")),
+    getContextPack: () => Promise.reject(new Error("Not implemented in test")),
     getLatestGuardRun: () => Promise.reject(new Error("Not implemented in test")),
     getRun: () => Promise.reject(new Error("Not implemented in test")),
     getTask: () => Promise.reject(new Error("Not implemented in test")),
@@ -23,6 +25,7 @@ export function createTestClient(
     getVaultInventory: () => Promise.reject(new Error("Not implemented in test")),
     getWorkspaceRepository: () =>
       Promise.reject(new Error("Not implemented in test")),
+    listContextPacks: () => Promise.reject(new Error("Not implemented in test")),
     listWorkspaces: () => Promise.reject(new Error("Not implemented in test")),
     listVaultFiles: () => Promise.reject(new Error("Not implemented in test")),
     ...overrides,

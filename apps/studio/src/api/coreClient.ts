@@ -1,6 +1,10 @@
 import type {
+  ContextPackCollection,
+  ContextPackManifest,
   CreateWorkspaceRequest,
   CreateTaskRequest,
+  CreateContextPackRequest,
+  CreateContextPackResponse,
   HealthResponse,
   GuardRunRequest,
   GuardRunResponse,
@@ -24,6 +28,10 @@ export type CoreFetcher = (
 
 export interface CoreClient {
   readonly baseUrl: string;
+  createContextPack(
+    workspaceId: string,
+    input: CreateContextPackRequest,
+  ): Promise<CreateContextPackResponse>;
   createRun(taskId: string): Promise<Run>;
   createGuardRun(
     workspaceId: string,
@@ -33,6 +41,10 @@ export interface CoreClient {
   createWorkspace(input: CreateWorkspaceRequest): Promise<Workspace>;
   buildVaultInventory(workspaceId: string): Promise<VaultInventorySnapshot>;
   getHealth(): Promise<HealthResponse>;
+  getContextPack(
+    workspaceId: string,
+    contextPackId: string,
+  ): Promise<ContextPackManifest>;
   getLatestGuardRun(workspaceId: string): Promise<GuardRunResponse>;
   getRun(runId: string): Promise<Run>;
   getTask(taskId: string): Promise<Task>;
@@ -43,6 +55,7 @@ export interface CoreClient {
     workspaceId: string,
     options?: { query?: string; extension?: string; limit?: number },
   ): Promise<VaultFileCollection>;
+  listContextPacks(workspaceId: string): Promise<ContextPackCollection>;
   listWorkspaces(): Promise<WorkspaceCollection>;
 }
 
@@ -148,6 +161,16 @@ export function createCoreClient(options?: {
         },
       );
     },
+    createContextPack(workspaceId, input) {
+      return request<CreateContextPackResponse>(
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/context-packs`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        },
+      );
+    },
     createRun(taskId) {
       return request<Run>(
         `/api/v1/tasks/${encodeURIComponent(taskId)}/runs`,
@@ -170,6 +193,11 @@ export function createCoreClient(options?: {
     },
     getHealth() {
       return request<HealthResponse>("/health");
+    },
+    getContextPack(workspaceId, contextPackId) {
+      return request<ContextPackManifest>(
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/context-packs/${encodeURIComponent(contextPackId)}`,
+      );
     },
     getLatestGuardRun(workspaceId) {
       return request<GuardRunResponse>(
@@ -200,6 +228,11 @@ export function createCoreClient(options?: {
     },
     listWorkspaces() {
       return request<WorkspaceCollection>("/api/v1/workspaces");
+    },
+    listContextPacks(workspaceId) {
+      return request<ContextPackCollection>(
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/context-packs`,
+      );
     },
     listVaultFiles(workspaceId, options = {}) {
       const search = new URLSearchParams();

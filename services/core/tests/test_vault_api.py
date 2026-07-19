@@ -20,11 +20,15 @@ def inventory_repository(tmp_path: Path) -> Path:
     (repository / "assets").mkdir(parents=True)
     (repository / "notes").mkdir()
     (repository / "src").mkdir()
+    (repository / "apps" / "studio" / "src-tauri" / "gen").mkdir(parents=True)
     (repository / "README.md").write_text("# Inventory\n", encoding="utf-8")
     (repository / "assets" / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n\0binary")
     (repository / "notes" / "large.txt").write_text("x" * 20_000, encoding="utf-8")
     (repository / "src" / "alpha.ts").write_text("export {};\n", encoding="utf-8")
     (repository / "src" / "zeta.py").write_text("print('zeta')\n", encoding="utf-8")
+    (repository / "apps" / "studio" / "src-tauri" / "gen" / "schema.json").write_text(
+        "{}\n", encoding="utf-8"
+    )
 
     for directory_name in EXCLUDED_DIRECTORY_NAMES:
         excluded_directory = repository / directory_name
@@ -58,7 +62,7 @@ def test_vault_inventory_build_is_deterministic_and_summarized(
     assert inventory["workspaceId"] == workspace["id"]
     assert inventory["summary"] == {
         "includedFileCount": 5,
-        "excludedEntryCount": len(EXCLUDED_DIRECTORY_NAMES) + 5,
+        "excludedEntryCount": len(EXCLUDED_DIRECTORY_NAMES) + 6,
         "textFileCount": 4,
         "binaryFileCount": 1,
         "totalSizeBytes": 20_000 + 12 + 15 + 11 + 14,

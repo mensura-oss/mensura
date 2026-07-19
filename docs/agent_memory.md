@@ -5,7 +5,7 @@
 - Mensura is an AGPL-3.0 open-source, local-first and self-hostable agentic development platform for professional developers and teams.
 - It combines a desktop workspace (Studio), orchestration (Core), project memory (Vault), quality and policy gates (Guard), extensions (Hub), and optional voice control (Voice).
 - The product emphasizes reproducible agent runs, visible diffs and logs, human approval, mandatory checks, open MCP interoperability, and user-managed model providers.
-- Current implementation status: the repository has a runnable pnpm workspace, tested shared contracts, a verified minimal Mensura Core FastAPI service, and a verified Tauri/React Studio flow for workspace selection -> ready task -> queued run, read-only repository inspection, deterministic Vault file inventory/preview, and manually triggered lint/test Guard results. Durable server persistence and agent execution remain unimplemented.
+- Current implementation status: the repository has a runnable pnpm workspace, tested shared contracts, a verified minimal Mensura Core FastAPI service, and a verified Tauri/React Studio flow for workspace selection -> ready task -> queued run, read-only repository inspection, deterministic Vault file inventory/preview, immutable context-pack creation/review, and manually triggered lint/test Guard results. Durable server persistence and agent execution remain unimplemented.
 
 ## Source Documents Read
 
@@ -124,10 +124,11 @@
 
 ## Current Status
 
+- Work cycle 8 is complete in the working tree from clean baseline commit `9c258d3`: Core creates deterministic immutable context packs only from an existing Vault inventory, and Studio explicitly selects and reviews their exact bounded evidence without provider execution.
 - Work cycle 7 is complete in the working tree from clean baseline commit `a893268`: Core has deterministic process-local Vault inventory and bounded safe text retrieval, and Studio has a compact active-workspace inventory/preview inspector.
 - Work cycle 6 is complete in the working tree from baseline commit `6552d2d`: Core has a manually triggered, bounded Ruff/pytest Guard runner and Studio has a compact active-workspace result panel.
-- Core v1 now includes tested replaceable read-only Git inspection and Guard execution adapters in addition to versioned resource routes, predictable RFC 9457 errors, replaceable in-memory storage, and OpenAPI.
-- Git history contains the initial license plus five completed incremental work-cycle commits before this cycle; it remains too short for meaningful code-hotspot inference.
+- Core v1 now includes tested replaceable read-only Git inspection, Guard execution, Vault inventory, and immutable context-pack adapters in addition to versioned resource routes, predictable RFC 9457 errors, replaceable in-memory storage, and OpenAPI.
+- Git history contained eight commits at this cycle's baseline; it remains too short for meaningful code-hotspot inference.
 - Documentation: ten project specifications, the root README, and this execution journal are tracked.
 - Code at audit time: no applications, services, packages, tests, dependency manifests, CI, or local run scripts existed.
 - Code now: pnpm workspace commands, strict shared TypeScript configuration, and `@mensura/shared-types` with domain contracts, guarded task/run transitions, plugin permissions, and runtime manifest validation.
@@ -136,6 +137,105 @@
 - Repository risk history is too small for meaningful hotspot or bug-magnet analysis; current risk is specification breadth and premature scaffolding.
 
 ## Completed Work Log
+
+### 2026-07-19 — Start work cycle 8: immutable context packs
+
+- Files changed: `docs/agent_memory.md`.
+- Baseline: confirmed clean worktree at `9c258d3`; re-read the cycle request, current journal, Vault models/service/store, Core dependency/router wiring, Studio Vault/client/App patterns, and the eight-commit history. History has no bug-fix magnets or firefighting commits; current hotspots are the expected journal, README, shared export, and Studio integration seams.
+- Contract boundary: add isolated context-pack v1 contracts for create request/response, immutable manifest, deterministic file entries, summary, and collection. A pack belongs to one workspace and one concrete Vault inventory snapshot; it is not a provider payload, prompt, semantic retrieval result, task mutation, or run transition.
+- Immutability boundary: accept an explicit non-empty file-path set, canonicalize and sort it, reject duplicates and paths absent from the latest inventory, capture current safe metadata plus bounded UTF-8 preview evidence, and store the complete manifest by content-derived identity. No update/delete endpoint will exist.
+- Binary policy: permit binary inventory items as metadata-only entries with a content SHA-256 computed from a bounded-inventory file (maximum 5 MiB), zero preview bytes, no text field, and explicit `binary` kind. Text entries capture at most 16 KiB of UTF-8 preview plus total bytes and truncation state.
+- Deterministic identity: compute per-file SHA-256 from current full file bytes; hash canonical JSON containing a schema version, workspace id, inventory id, deterministic ordered entries, limits, and aggregate summary. Exclude creation time and pack id from the digest input; repeated creation from unchanged selected inputs yields the same `sha256:<hex>` id/digest and idempotently reuses the stored manifest.
+- Explicit limits: at most 50 selected files, at most 16 KiB preview per text file, and at most 256 KiB aggregate captured preview text. Vault's existing 5 MiB included-file ceiling remains the maximum hash input per file. Reject an oversized selection/aggregate rather than silently omit selected evidence.
+- API boundary: synchronous `POST /api/v1/workspaces/{workspace_id}/context-packs`, `GET .../context-packs`, and `GET .../context-packs/{context_pack_id}`. List returns immutable manifest summaries only; get returns the exact manifest. Stable RFC 9457 problems cover absent inventory, invalid/excluded selections, oversized requests, changed/unavailable files, and missing packs.
+- Studio boundary: add one active-workspace review panel that reuses the Vault file collection query, shows explicit checkbox selection and an upper-bound preview estimate before creation, submits via a TanStack mutation, lists process-local packs, and opens one immutable manifest without displaying full captured contents. Errors stay local to this panel.
+- Explicitly deferred: provider/model execution, prompts, embeddings, semantic retrieval, editable packs, repository writes, background refresh/watchers, durable storage, task/run attachment, provider payload formats, and full content rendering.
+- Follow-up: define and verify shared TypeScript contracts before implementing Core storage and hashing.
+
+### 2026-07-19 — Define and verify the context-pack v1 shared contract
+
+- Files changed: `packages/shared-types/src/{context-pack,context-pack.test,index}.ts` and `docs/agent_memory.md`.
+- Defined: pinned schema version `1`; explicit `text_preview | metadata_only` capture modes; SHA-256 digest strings; manifest limits; deterministic file entries with content digest and nullable bounded preview; aggregate file/byte/truncation summary; create request/response; and summary collection contracts.
+- Isolation: context-pack types live separately from Vault snapshots and task/run entities. They reference a workspace and inventory by id but do not mutate either contract or imply provider/prompt attachment.
+- Binary policy is visible on the wire: binary entries remain reviewable metadata with a content digest, null text/encoding, zero preview bytes, and `metadata_only` capture mode.
+- Verification: strict TypeScript typecheck/build and all 16 shared tests across five files pass.
+- Follow-up: implement Core canonicalization, current-file validation, bounded capture, content-derived storage, APIs, problems, and deterministic regression coverage.
+
+### 2026-07-19 — Prepare the Core context-pack step
+
+- Files changed: `docs/agent_memory.md`.
+- Planned modules: isolated Pydantic context-pack models, a lock-protected immutable repository protocol/adapter, application service, router, dependency wiring, RFC 9457 exceptions/handlers, and API/OpenAPI tests. Existing Vault builder/store remains the authority for which paths are selectable.
+- Capture algorithm: load the latest inventory record; normalize, de-duplicate, and sort requested POSIX paths; require every path in that exact snapshot; re-resolve each target under the workspace with the same no-symlink/containment checks; stream-hash at most Vault's allowed 5 MiB; decode at most 16 KiB of text using the existing safe preview behavior; and retain binary files as metadata-only.
+- Canonicalization: Pydantic models serialize camelCase JSON; a separate digest payload omits only `id`/`digest`, uses sorted object keys and compact UTF-8 JSON separators, and retains the ordered file array. The resulting `sha256:<hex>` is both resource id and digest.
+- Store semantics: `save_if_absent` never replaces a manifest and returns whether this process created it. Listing is sorted by id and returns summaries; storage remains process-local and is explicitly documented as non-durable.
+- API/problems: POST returns the typed `{ contextPack, created }` envelope and a deterministic `Location`; repeated creation returns the same manifest with `created: false`. Add problem identities for invalid selection, excluded/changed files, oversized request, and missing pack; reuse missing workspace and inventory-not-built problems where exact semantics already match.
+- Follow-up: implement and verify Core before changing Studio.
+
+### 2026-07-19 — Implement and verify immutable Core context packs
+
+- Files changed: `services/core/src/mensura_core/{context_pack_models,context_pack_repositories,context_pack_service,exceptions,main}.py`, `services/core/src/mensura_core/api/{dependencies,problems,router,routers/context_packs}.py`, `services/core/tests/{test_context_pack_api,test_openapi}.py`, and `docs/agent_memory.md`.
+- Architecture: `ContextPackService` depends on the existing Core workspace repository, the same injected latest-inventory repository used by `VaultService`, and a separate immutable repository protocol. The default adapter stores manifests process-locally under `(workspaceId, digest)` and only supports save-if-absent, list, and get.
+- Creation behavior: requires a built inventory and 1–50 unique normalized POSIX paths; sorts paths case-insensitively with an exact tie-break; rejects missing/excluded/traversing paths; rechecks root containment, every symlink component, regular-file state, current size, and Vault's 5 MiB ceiling before capture.
+- Exact evidence: streams every allowed file through SHA-256 without retaining full content; text entries capture at most 16 KiB of strict UTF-8 without splitting a trailing code point; binary entries retain only metadata and digest. Any size/classification/unavailability drift produces a `409` and asks the client to refresh inventory.
+- Limits: aggregate text preview bytes may not exceed 256 KiB. The service rejects the whole request with `413` if either the 50-file or aggregate-preview limit is exceeded; it never silently drops selected evidence.
+- Identity: canonical compact UTF-8 JSON uses sorted object keys and contains schema/workspace/inventory ids, explicit limits, aggregate summary, and deterministically ordered complete entries. SHA-256 of this payload becomes both `id` and `digest`; creation time is absent, so identical unchanged selection against one inventory produces byte-identical manifests and idempotent storage.
+- API: added POST/list/get workspace-scoped routes. POST returns `{ contextPack, created }`, always sets a deterministic `Location`, and reports `created: false` with the exact stored manifest on duplicate content. No update/delete route exists.
+- Problems: added stable context-pack invalid-selection (422), too-large (413), changed-file (409), and not-found (404) RFC 9457 types; reused existing missing workspace/inventory, Vault path-invalid, and Vault excluded-file types where semantics are identical.
+- Verification: Ruff lint/format pass and all 47 Core tests pass with warnings treated as errors. Coverage includes deterministic reversed-order creation, same input/same id, per-file hashes, binary metadata-only behavior, UTF-8 truncation, both limit classes, path/exclusion/duplicate/drift failures, missing inventory/workspace/pack, list/get, camelCase schemas, and exact endpoint surface.
+- Follow-up: add the typed Studio client/query/mutation and a compact explicit selection/immutable-review panel without task/run attachment.
+
+### 2026-07-19 — Prepare the Studio context-pack step
+
+- Files changed: `docs/agent_memory.md`.
+- Client/query plan: add create/list/get methods and workspace-scoped collection/manifest keys. The create mutation seeds the exact manifest, invalidates the summary list, and selects the returned deterministic id; no optimistic manifest is fabricated.
+- UI plan: a separate full-width active-workspace panel consumes the existing bounded Vault file query, renders checkboxes with text/binary and size cues, shows selected count plus a conservative per-file preview upper-bound, and disables creation for empty or over-limit selection.
+- Review plan: show process-local packs in a compact list; opening one fetches the immutable manifest and renders id/digest, inventory id, aggregate counts/bytes, ordered file rows, capture mode, content digest, and preview/truncation byte indicators. Do not render preview bodies in the main UI.
+- State boundary: selected paths and opened pack id are small component-local state; all API resources remain in TanStack Query. A Vault refresh can make a selection stale, and Core remains authoritative with a structured action-local problem.
+- Test plan: cover typed URLs/body, no-selection/no-inventory states, explicit selection and estimate, pending creation, successful immutable review, reopening a listed pack, binary cues, and RFC 9457 mutation errors.
+- Follow-up: implement Studio and verify it independently before documentation and native acceptance.
+
+### 2026-07-19 — Implement and verify the Studio context-pack builder/reviewer
+
+- Files changed: `apps/studio/src/api/{coreClient,coreClient.test}.ts`, `apps/studio/src/app/App.tsx`, `apps/studio/src/app/queryClient.ts`, `apps/studio/src/features/context-packs/{ContextPackPanel,ContextPackPanel.test}.tsx`, `apps/studio/src/test/render.tsx`, `apps/studio/src/styles.css`, and `docs/agent_memory.md`.
+- Typed transport: added create/list/get client methods with encoded workspace/digest path values and typed shared request/response contracts. Added separate workspace-scoped collection, candidate-file, and manifest query keys so the builder's 500-file inventory view cannot collide with Vault's 200-file inspector cache entry.
+- Builder: requires active workspace plus ready inventory; displays up to 500 deterministic inventoried files as labeled checkboxes; shows exact selected paths, text-preview vs binary-metadata policy, selected count, and a conservative preview-byte upper bound before submission. Empty selection and >50-file/>256-KiB estimates disable creation with local guidance.
+- Mutation/review: submits the explicit path array, keeps selection on failure, shows a bounded pending state, seeds the exact returned manifest cache, refreshes the pack list, and distinguishes new creation from idempotent reopening. No optimistic digest or manifest is fabricated.
+- Immutable library: lists process-local summaries and opens any digest in read-only mode. Review shows schema/locked state, full pack digest, inventory snapshot id, aggregate file/byte/truncation counts, ordered paths, capture modes, full per-file content digests, and captured/total byte indicators; preview bodies are intentionally not rendered.
+- Failure isolation/accessibility: labels are native checkbox labels; selection/pending/success states are announced; RFC 9457 errors remain adjacent to creation or manifest retrieval; missing inventory is neutral guidance; the panel does not disable Vault, Guard, task, or run flows.
+- Verification: Studio strict typecheck, all 42 tests across 13 files, and Vite production build pass. Tests cover client paths/body encoding, no-workspace/no-inventory guidance, exact text/binary selection, preview estimate, pending create, immediate locked review, listed-pack retrieval, hidden preview body, and preserved selection on structured server refusal.
+- Live issue resolved: the initial collection invalidation used TanStack Query's prefix matching and unnecessarily refetched the candidate file list plus the seeded open manifest. Setting `exact: true` now refreshes only the pack-summary collection while preserving immediate immutable review and avoiding redundant filesystem reads.
+- State issue resolved: the candidate-file query key now includes the concrete inventory id. A Vault refresh therefore creates a new candidate cache entry immediately instead of briefly offering paths from the previous snapshot; Core's current-inventory validation remains authoritative.
+- Explicitly deferred: task/run attachment, provider execution, prompt rendering, editable packs, full captured text display, durable history, pagination/search, and background inventory synchronization.
+- Follow-up: update user-facing docs, run the full monorepo/Core suite, then verify live Uvicorn and release Tauri behavior on the Mensura repository.
+
+### 2026-07-19 — Prepare cycle 8 acceptance and documentation
+
+- Files changed: `docs/agent_memory.md`.
+- Documentation plan: update root/Core/Studio READMEs with the three endpoints, deterministic identity/capture limits, metadata-only binary behavior, process-local storage, and the builder/review workflow without overstating task/run or provider integration.
+- Regression plan: run `pnpm check`, Core Ruff lint/format and pytest with warnings as errors, Cargo format, `git diff --check`, production scans for forbidden provider/repository-write behavior, and a release desktop bundle if local packaging remains available.
+- Live plan: start Core against a clean process, create a Mensura workspace/inventory, use Studio to select real inventoried files, create/reopen a pack, confirm list/get and exact digest behavior in Core logs/UI, and stop all processes cleanly.
+- Follow-up: only mark the cycle complete after documented counts and live evidence match the shipped contracts.
+
+### 2026-07-19 — Tighten a generated-artifact rule found during native acceptance
+
+- Files changed before implementation: `docs/agent_memory.md`.
+- Observation: the release Tauri build creates ignored schema output under `apps/*/src-tauri/gen`; the current fixed Vault traversal offered those files as selectable context because general `.gitignore` interpretation is intentionally deferred.
+- Decision: add one explicit case-insensitive `src-tauri/gen` directory-path exclusion, count each pruned directory once, and apply the same rule to direct context-pack selection validation. Do not add a broad `gen` directory exclusion that could hide legitimate source.
+- Verification plan: add the synthetic Tauri path to the existing Vault fixture, keep included-file expectations unchanged, increment excluded count once, rerun Core/full checks, and confirm a rebuilt real Mensura inventory no longer returns any `/src-tauri/gen/` path.
+- Files changed after implementation: `services/core/src/mensura_core/vault_inventory.py`, `services/core/tests/test_vault_api.py`, `services/core/README.md`, and `docs/agent_memory.md`.
+- Implemented: traversal and direct relative-path checks now prune only directory paths ending in the case-insensitive pair `src-tauri/gen`; a generic directory named `gen` remains eligible. The directory counts once and its generated schemas are never enumerated or selectable by a context pack.
+- Verification: Ruff lint/format and all 47 Core tests pass with warnings as errors. A direct rebuild over the real repository reports 149 included/23 excluded entries and zero paths containing `/src-tauri/gen/`.
+
+### 2026-07-19 — Complete work cycle 8 acceptance
+
+- Files changed: 28 files across shared contracts, Core models/service/repository/router/problems/tests, Studio client/query/panel/styles/tests, Vault's Tauri-generated path rule, root/Core/Studio READMEs, and this journal.
+- Full verification: `pnpm check` passes strict shared/Studio typechecks, 16 shared tests, 42 Studio tests, both production builds, and native Cargo check. Core Ruff lint/format and all 47 tests pass with warnings treated as errors. Cargo format, `git diff --check`, and the production scan for context-pack subprocess/provider/repository-write calls pass.
+- Release artifacts: a full `pnpm studio:build` succeeded and produced the optimized binary, `Mensura Studio.app`, and `Mensura Studio_0.1.0_aarch64.dmg`. After the query-key refinements, a second packaging request could not start because the approval service returned HTTP 503; the safer `tauri build --no-bundle` then rebuilt the final optimized release binary successfully after both cache fixes. The packaged app used for live acceptance contains the complete feature; only the redundant-refetch and snapshot-key refinements landed afterward.
+- Live native acceptance: started a fresh Uvicorn Core and the release Tauri app; created and selected the Mensura workspace; built inventory; selected `apps/studio/README.md` as text and `apps/studio/src-tauri/icons/128x128.png` as binary; created a two-file pack; reviewed locked schema/inventory/aggregate/path/capture/digest metadata; reopened the exact same pack; and quit Studio/Core cleanly.
+- Live identity/evidence: pack id `sha256:89199f552b174d3e72ffd63e5fd9728882d1d00fd5d394be0dc7d2d5495c0e97`; UI showed 8.9 KiB file bytes, 5.3 KiB preview bytes, zero truncations, 5.3 KiB text capture, zero-byte binary preview, and full distinct per-file digests. Core logs confirmed POST create, GET list, encoded-digest GET, and repeated idempotent POST all succeeded.
+- Acceptance follow-up: the live build exposed ignored Tauri generated schemas in inventory; the specific `src-tauri/gen` exclusion and regression coverage now remove them. Final direct real-repository inventory is 149 included/23 excluded with zero generated-schema paths.
+- Definition of done: a user can explicitly select inventoried files, create a stable immutable pack, review exact bounded evidence in Studio, list/get/reopen it, and receive predictable RFC 9457 failures. No provider/model execution, prompt rendering, task/run attachment, embeddings, repository writes, watchers, or durable storage were introduced.
+- Next priority: make queued run creation accept and immutably record a reviewed `contextPackId`, validate that task/workspace/pack ownership agrees, and show the exact binding in Studio. Provider execution should follow only after that reproducibility link exists.
 
 ### 2026-07-19 16:34 MSK — Start work cycle 7: deterministic Vault inventory
 
@@ -550,18 +650,18 @@
 - Task lifecycle rules that require review before approval and support revision/retry paths.
 - Run lifecycle rules that require checking and an approval checkpoint before completion.
 - Runtime plugin manifest validation for supported types and permissions, semantic versions, duplicate permissions, and unsafe entry paths.
-- Automated coverage for shared lifecycle, plugin validation, Guard, and Vault wire-contract behavior (14 passing tests).
-- Python 3.12 FastAPI Core service with enabled OpenAPI and fourteen implemented HTTP endpoints.
+- Automated coverage for shared lifecycle, plugin validation, Guard, Vault, and context-pack wire-contract behavior (16 passing tests).
+- Python 3.12 FastAPI Core service with enabled OpenAPI and seventeen implemented HTTP operations across fourteen paths.
 - Workspace creation/listing with exact-root conflict detection in a process-local repository.
 - Task creation/retrieval tied to an existing workspace; created tasks begin in `ready` status.
 - Placeholder run creation/retrieval; created runs remain `queued` and perform no orchestration or side effects.
 - RFC 9457 `application/problem+json` responses for resource misses, conflicts, request validation, framework HTTP errors, and generic internal failures.
 - CamelCase JSON contracts aligned with TypeScript Workspace/Task ownership and documented in OpenAPI.
-- Forty-three passing Core service/runner/API/OpenAPI/Git/Vault-adapter tests plus successful real-Uvicorn repository inspection, Guard execution, inventory, filtering, and preview retrieval.
+- Forty-seven passing Core service/runner/API/OpenAPI/Git/Vault/context-pack tests plus successful real-Uvicorn repository inspection, Guard execution, inventory, filtering, preview retrieval, and immutable pack creation/get/list.
 - Tauri 2 desktop Studio with React 19, Vite 8, a single resizable window, desktop app icons, CSP, and a local-Core-only native HTTP capability.
 - TanStack Query-backed Core health polling, workspace list/create behavior, task lookup, and run lookup with explicit loading, empty, success, connection-error, and RFC 9457 error states.
 - Shared Health, workspace transport, and Problem Details contracts aligned with Core's camelCase responses and nullable fields.
-- Thirty-six passing Studio client/component/acceptance tests and successful native release binary, macOS `.app`, and DMG builds.
+- Forty-two passing Studio client/component/acceptance tests and successful native release binary, macOS `.app`, and DMG builds.
 - Verified live desktop connectivity from the release Tauri WebView to Core health and workspace endpoints.
 - Persisted active workspace selection with stale-ID reconciliation after Core restart.
 - Accessible active-workspace task creation with client validation, RFC 9457 failures, value preservation on failure, and immediate ready-task details.
@@ -581,13 +681,18 @@
 - Workspace-scoped Vault build/latest/list/preview endpoints with stable RFC 9457 problems for invalid roots, absent inventory, invalid or excluded paths, binary preview refusal, and missing files.
 - Compact active-workspace Studio Vault panel with manual build/refresh, aggregate/language summary, bounded deterministic file list, metadata inspector, bounded text preview, binary no-request state, and isolated errors.
 - Verified live release-Studio -> Core -> Mensura inventory -> file metadata -> safe preview -> refresh flow, including discovery and removal of local package-cache/OS artifacts from fixed rules.
+- Isolated shared context-pack v1 contracts for pinned schema/limits, deterministic entries, SHA-256 identities, immutable manifests, summaries, and create/list/get transport shapes.
+- Replaceable Core context-pack service/repository boundaries that bind to one Vault inventory, revalidate selected paths, stream-hash full allowed files, capture bounded UTF-8 previews, keep binary evidence metadata-only, and store by content-derived identity without update/delete operations.
+- Workspace-scoped context-pack create/list/get endpoints with stable RFC 9457 problems for invalid/excluded/changed files, oversized packs, absent inventory, and missing manifests.
+- Compact active-workspace Studio builder with explicit pre-creation selection, bounded-size estimates, native checkbox labels, idempotent creation, process-local pack library, and locked manifest review without preview-body dumping.
+- Verified live release-Studio -> Core -> real Mensura inventory -> selected text/binary evidence -> deterministic pack -> read-only get/list/reopen flow; native UI displayed stable pack/per-file digests and repeating creation reopened the same id.
 
 ## Pending Tasks
 
 ### MVP
 
-1. Add task/run-linked immutable context packs from explicitly selected Vault files, with exact bounded content and a compact Studio review step.
-2. Implement one observable execution flow: queued run -> reviewed context pack -> explicit provider/runner adapter -> safe diff metadata -> Guard -> review -> approve/reject.
+1. Bind a reviewed immutable context pack to queued run creation, validate workspace ownership, persist the immutable run-context reference, and show it in Studio before any provider call.
+2. Implement one observable execution flow: queued run with reviewed context -> explicit provider/runner adapter -> safe diff metadata -> Guard -> review -> approve/reject.
 3. Add Docker Compose only for dependencies required by the working flow, plus CI for format, typecheck, tests, and builds.
 4. Replace temporary in-memory adapters with durable storage where acceptance criteria require restart-safe history.
 
@@ -692,6 +797,13 @@
 - Alternatives considered: Git tracked-file enumeration, `.gitignore` libraries, content/MIME discovery dependencies, hashing every file, SQLite, background watchers, Tree-sitter chunks, embeddings, and returning full text. Deferred because they add policy, cost, durability, concurrency, or semantic assumptions beyond a minimal inventory; Git-only enumeration would also hide safe untracked context.
 - Consequences: one pruned directory counts once; the inventory is not an atomic filesystem snapshot; known safe untracked files can appear; fixed exclusions require maintenance as real repositories expose new local artifacts; language labels are shallow; only one latest record survives per workspace; preview revalidates path containment/symlinks/current binary state and never writes files.
 
+### Immutable, content-derived context packs
+
+- Decision: create context packs only from explicit paths in one latest Vault inventory; capture bounded UTF-8 preview evidence or metadata-only binary evidence; hash every complete allowed file; and derive the immutable resource id from canonical schema/workspace/inventory/limits/summary/entry JSON.
+- Reason: a future provider run must have human-reviewable, reproducible input before orchestration exists. Including inventory identity, content digests, exact ordered paths, capture modes, and hard bounds makes evidence changes visible without inventing prompt or model payload formats.
+- Alternatives considered: mutable selections, random UUID ids, creation timestamps inside the digest, full file bodies, binary rejection, semantic retrieval, task/run mutation in this cycle, and provider-specific envelopes. Rejected or deferred because they weaken reproducibility, exceed safe review bounds, or couple this evidence layer to execution that does not yet exist.
+- Consequences: unchanged selection against one inventory idempotently returns one `sha256:<hex>` resource; rebuilding inventory deliberately changes identity even if paths are unchanged; text capture is capped at 16 KiB/file and 256 KiB/pack; binary content is represented only by metadata/digest; packs disappear on Core restart; no update/delete endpoint or repository write exists; task/run binding is the next explicit compatibility step.
+
 ## Open Questions
 
 - Which pagination and authentication contracts should extend the implemented Core v1 resource/error schemas?
@@ -699,5 +811,6 @@
 - Which model provider should power the first non-stub run, and how should BYOK credentials be stored on each platform?
 - What exact sandbox guarantees are required for local command execution on macOS, Linux, and Windows?
 - Which project-specific ignore mechanism should extend the fixed Vault rules before team-scale indexing, and when should hashing/durable branch-aware snapshots become necessary?
+- Should queued run creation require a context pack immediately, or first allow an explicit nullable immutable reference while older clients migrate?
 - How are plugin signatures rooted and verified, and which permissions are allowed for the first local plugin loader?
 - Are the `[cite:…]` markers in the specifications backed by a source bibliography that should be added to the repository?

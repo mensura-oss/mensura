@@ -1,4 +1,5 @@
 import { useCoreClient } from "../api/CoreClientProvider";
+import { ContextPackPanel } from "../features/context-packs/ContextPackPanel";
 import { HealthPanel } from "../features/health/HealthPanel";
 import { GuardPanel } from "../features/guard/GuardPanel";
 import { RunInspector } from "../features/runs/RunInspector";
@@ -37,6 +38,12 @@ export function App() {
         </div>
         <div className="dashboard-grid__vault">
           <VaultPanel
+            key={activeWorkspaceId ?? "no-workspace"}
+            activeWorkspaceId={activeWorkspaceId}
+          />
+        </div>
+        <div className="dashboard-grid__context-packs">
+          <ContextPackPanel
             key={activeWorkspaceId ?? "no-workspace"}
             activeWorkspaceId={activeWorkspaceId}
           />

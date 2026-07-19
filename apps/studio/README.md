@@ -1,6 +1,6 @@
 # Mensura Studio
 
-Mensura Studio is the Tauri 2 desktop client for the local Mensura Core service. The current vertical slice supports selecting a workspace, inspecting its local Git state, building and browsing a deterministic Vault file inventory, manually running configured Guard checks, creating a task, and recording a queued placeholder run while keeping orchestration explicitly out of scope.
+Mensura Studio is the Tauri 2 desktop client for the local Mensura Core service. The current vertical slice supports selecting a workspace, inspecting its local Git state, building and browsing a deterministic Vault file inventory, selecting exact files into an immutable context pack, manually running configured Guard checks, creating a task, and recording a queued placeholder run while keeping orchestration explicitly out of scope.
 
 ## Requirements
 
@@ -51,6 +51,7 @@ pnpm studio:build
 - Workspace list, create form, selectable active workspace, and restored local selection
 - Compact read-only repository summary for the active workspace: branch/detached state, clean/dirty badge, staged/unstaged/untracked counts, and up to eight changed-path metadata entries
 - Manual Vault inventory build/refresh with included/excluded/text/binary counts, compact language summary, up to 200 deterministic file metadata entries, and a 16 KiB UTF-8 text preview inspector
+- Context-pack builder with up to 500 selectable inventory entries, exact pre-creation path review, selected/preview-limit counters, immutable creation, process-local pack list, and read-only manifest inspection
 - Manual Guard panel with latest-result loading, `Run checks`, pass/fail and blocking state, aggregate counts, compact lint/test cards, and collapsed bounded output
 - Task creation for the active workspace plus task lookup by UUID
 - Queued run creation from created or looked-up tasks plus run lookup by UUID
@@ -62,6 +63,8 @@ The Guard panel is also independent. Before running it, review the workspace's `
 
 The Vault panel is manual and read-only. Build inventory traverses the current workspace root with Core's fixed exclusion rules and stores only the latest snapshot in memory. Selecting a text file loads at most 16 KiB; selecting a binary file shows metadata without making a preview request. Sensitive, generated, oversized, symlinked, missing, and unsafe paths are refused through RFC 9457 errors. This is deterministic metadata retrieval, not semantic search or a complete secret scanner.
 
+The context-pack panel uses that latest inventory but has its own candidate query so it can expose up to the API's 500-file listing limit without colliding with the Vault inspector cache. Before creation it shows every selected path, text-preview versus binary-metadata policy, file count, and a conservative bounded-preview estimate. Core remains authoritative for validation. After creation Studio immediately opens the exact returned locked manifest and shows pack/inventory ids, counts, paths, capture/truncation metadata, and content digests; it intentionally does not dump captured preview bodies into the main shell.
+
 The active workspace ID persists in localStorage, but Core data remains in memory. Restarting Core removes its workspaces/tasks/runs, and Studio clears a restored workspace selection when that ID no longer exists. Repository status is inspected live from the workspace `rootPath`; for this MVP the path itself must be a committed, non-bare Git worktree root.
 
-The app does not start Core itself. A created run remains `queued`; no worker consumes it. Monaco, terminals, full repository tree/navigation, file editing, content/semantic search, embeddings, full diff or patch viewing, Git writes, task/run lists, live run events, Kanban, durable Vault history/watchers, the full Guard policy engine/history/config editor, Hub, plugins, authentication, and settings are intentionally deferred.
+The app does not start Core itself. A created run remains `queued`; no worker consumes it. Context packs are not yet attached to tasks/runs or rendered into prompts/provider payloads. Monaco, terminals, full repository tree/navigation, file editing, content/semantic search, embeddings, full diff or patch viewing, Git writes, task/run lists, live run events, Kanban, durable Vault/context-pack history or watchers, the full Guard policy engine/history/config editor, Hub, plugins, authentication, and settings are intentionally deferred.

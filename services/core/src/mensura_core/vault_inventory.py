@@ -34,6 +34,8 @@ EXCLUDED_DIRECTORY_NAMES = frozenset(
     }
 )
 
+EXCLUDED_DIRECTORY_PATH_SUFFIXES = (("src-tauri", "gen"),)
+
 EXCLUDED_ARTIFACT_SUFFIXES = frozenset(
     {
         ".7z",
@@ -147,6 +149,14 @@ class VaultInventoryRules:
     def excludes_directory(self, name: str) -> bool:
         return name.casefold() in EXCLUDED_DIRECTORY_NAMES
 
+    def excludes_directory_path(self, relative_path: Path) -> bool:
+        parts = tuple(part.casefold() for part in relative_path.parts)
+        return any(
+            parts[-len(suffix) :] == suffix
+            for suffix in EXCLUDED_DIRECTORY_PATH_SUFFIXES
+            if len(parts) >= len(suffix)
+        )
+
     def excludes_file(self, path: Path, size_bytes: int) -> bool:
         name = path.name.casefold()
         suffix = path.suffix.casefold()
@@ -163,8 +173,13 @@ class VaultInventoryRules:
 
     def excludes_relative_path(self, relative_path: str, *, size_bytes: int | None = None) -> bool:
         path = Path(relative_path)
-        if any(self.excludes_directory(part) for part in path.parts[:-1]):
+        directory_parts = path.parts[:-1]
+        if any(self.excludes_directory(part) for part in directory_parts):
             return True
+        for index in range(len(directory_parts)):
+            candidate = Path(*directory_parts[: index + 1])
+            if self.excludes_directory_path(candidate):
+                return True
         return self.excludes_file(path, size_bytes or 0)
 
 
@@ -209,7 +224,10 @@ class LocalVaultInventoryBuilder:
                 if entry.is_symlink():
                     excluded += 1
                 elif entry.is_dir(follow_symlinks=False):
-                    if self._rules.excludes_directory(entry.name):
+                    relative_directory = path.relative_to(root)
+                    if self._rules.excludes_directory(
+                        entry.name
+                    ) or self._rules.excludes_directory_path(relative_directory):
                         excluded += 1
                     else:
                         excluded += self._walk(root, path, items)
