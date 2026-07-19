@@ -13,6 +13,7 @@ from mensura_core.exceptions import (
     ContextPackInvalidSelectionError,
     ContextPackNotFoundError,
     ContextPackTooLargeError,
+    ContextPackWorkspaceMismatchError,
     GuardConfigurationInvalidError,
     GuardConfigurationNotFoundError,
     GuardExecutionError,
@@ -57,6 +58,7 @@ CONTEXT_PACK_INVALID_SELECTION_TYPE = "urn:mensura:problem:context-pack-invalid-
 CONTEXT_PACK_TOO_LARGE_TYPE = "urn:mensura:problem:context-pack-too-large"
 CONTEXT_PACK_FILE_CHANGED_TYPE = "urn:mensura:problem:context-pack-file-changed"
 CONTEXT_PACK_NOT_FOUND_TYPE = "urn:mensura:problem:context-pack-not-found"
+CONTEXT_PACK_WORKSPACE_MISMATCH_TYPE = "urn:mensura:problem:context-pack-workspace-mismatch"
 
 
 class InvalidParameter(BaseModel):
@@ -361,6 +363,18 @@ def install_problem_handlers(app: FastAPI) -> None:
             status=404,
             problem_type=CONTEXT_PACK_NOT_FOUND_TYPE,
             title="Context pack not found",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ContextPackWorkspaceMismatchError)
+    async def context_pack_workspace_mismatch_handler(
+        request: Request, error: ContextPackWorkspaceMismatchError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=CONTEXT_PACK_WORKSPACE_MISMATCH_TYPE,
+            title="Context pack workspace mismatch",
             detail=error.detail,
         )
 

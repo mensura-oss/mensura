@@ -5,7 +5,7 @@
 - Mensura is an AGPL-3.0 open-source, local-first and self-hostable agentic development platform for professional developers and teams.
 - It combines a desktop workspace (Studio), orchestration (Core), project memory (Vault), quality and policy gates (Guard), extensions (Hub), and optional voice control (Voice).
 - The product emphasizes reproducible agent runs, visible diffs and logs, human approval, mandatory checks, open MCP interoperability, and user-managed model providers.
-- Current implementation status: the repository has a runnable pnpm workspace, tested shared contracts, a verified minimal Mensura Core FastAPI service, and a verified Tauri/React Studio flow for workspace selection -> ready task -> queued run, read-only repository inspection, deterministic Vault file inventory/preview, immutable context-pack creation/review, and manually triggered lint/test Guard results. Durable server persistence and agent execution remain unimplemented.
+- Current implementation status: the repository has a runnable pnpm workspace, tested shared contracts, a verified minimal Mensura Core FastAPI service, and a verified Tauri/React Studio flow for workspace selection -> Vault inventory -> immutable context pack -> ready task -> context-bound queued run, plus read-only repository inspection and manually triggered lint/test Guard results. Durable server persistence and agent/provider execution remain unimplemented.
 
 ## Source Documents Read
 
@@ -124,6 +124,7 @@
 
 ## Current Status
 
+- Work cycle 9 is complete in the working tree from clean baseline commit `9d63e6e`: queued run creation requires an existing immutable context pack owned by the task workspace, persists the exact binding, and Studio shows the selected and stored execution context before any provider execution.
 - Work cycle 8 is complete in the working tree from clean baseline commit `9c258d3`: Core creates deterministic immutable context packs only from an existing Vault inventory, and Studio explicitly selects and reviews their exact bounded evidence without provider execution.
 - Work cycle 7 is complete in the working tree from clean baseline commit `a893268`: Core has deterministic process-local Vault inventory and bounded safe text retrieval, and Studio has a compact active-workspace inventory/preview inspector.
 - Work cycle 6 is complete in the working tree from baseline commit `6552d2d`: Core has a manually triggered, bounded Ruff/pytest Guard runner and Studio has a compact active-workspace result panel.
@@ -137,6 +138,83 @@
 - Repository risk history is too small for meaningful hotspot or bug-magnet analysis; current risk is specification breadth and premature scaffolding.
 
 ## Completed Work Log
+
+### 2026-07-19 — Start work cycle 9: bind immutable context packs to queued runs
+
+- Files changed: `docs/agent_memory.md`.
+- Baseline: confirmed a clean worktree at `9d63e6e`; re-read the current journal and the task/run/context-pack integration surface. The nine-commit history has no bug-fix magnets or firefighting commits; expected hotspots are the journal, root/Studio documentation, shared exports, Core service/router wiring, and Studio client/App integration.
+- Contract boundary: `POST /api/v1/tasks/{task_id}/runs` will require a camelCase `{ contextPackId }` body. A run will store an immutable reference to the selected pack rather than embedding mutable file paths or captured evidence.
+- Ownership boundary: Core remains authoritative. It must resolve the task, resolve the context pack from its workspace-scoped immutable repository, require matching workspace ownership, and only then create a queued run. Missing packs and mismatches receive stable RFC 9457 problems.
+- Read boundary: run create/get responses will expose the exact context-pack id plus a compact immutable summary sufficient for Studio to show the binding before any execution. No prompt/provider payload is introduced.
+- Studio boundary: existing packs for the active workspace remain TanStack Query server state; the run action requires an explicit selection, displays the chosen immutable id/summary before submission, preserves it on failure, and renders the persisted binding for both newly created and fetched runs.
+- Explicitly deferred: provider/model execution, prompt assembly, repository writes, worker/queue behavior, SSE, orchestration, mutable context selection, durable persistence, and migration compatibility for pre-contract clients.
+- Follow-up: define and verify the shared TypeScript run-binding contract before changing Core persistence and validation.
+
+### 2026-07-19 — Define and verify the queued-run context binding contract
+
+- Files changed: `packages/shared-types/src/{api,context-pack,context-pack.test,domain}.ts` and `docs/agent_memory.md`.
+- Defined: `CreateRunRequest` requires one SHA-256 `contextPackId`; every `Run` returns that direct immutable id and a compact `ContextPackReference` containing the pack/workspace/inventory identities, schema version, file count, total file bytes, and bounded preview bytes.
+- Data-model decision: the run stores the direct binding id, while the compact read reference makes ownership and review evidence visible without embedding file selections, manifest bodies, or provider input. The reference is derived only from an immutable manifest.
+- Verification: strict shared TypeScript typecheck and all 17 shared tests across five files pass.
+- Follow-up: inject the same immutable context-pack repository into `CoreService`, validate task/pack ownership before persistence, add stable mismatch/missing-pack problems, and cover create/get/validation/OpenAPI behavior.
+
+### 2026-07-19 — Prepare the Core queued-run binding step
+
+- Files changed: `docs/agent_memory.md`.
+- Service plan: resolve the task first; retrieve the requested pack under the task's workspace; if absent, distinguish a globally absent pack from a pack that exists under another workspace so ownership mismatch is explicit; then persist one queued run containing the exact pack id and derived compact reference.
+- Repository plan: retain the existing replaceable process-local Core run store, but inject the single context-pack repository instance into both `ContextPackService` and `CoreService`. No manifest mutation or run execution occurs.
+- API plan: require a strict JSON body on `POST /api/v1/tasks/{task_id}/runs`; retain `201` and `Location`; return validation Problem Details for absent/legacy/malformed bodies, context-pack-not-found for unknown ids, and a dedicated `409` workspace-mismatch problem when the id belongs to another workspace.
+- Test plan: create real deterministic packs through the existing Vault API, then cover valid binding, GET persistence, missing task/pack, cross-workspace mismatch, legacy empty-body rejection, extra-field rejection, and exact camelCase OpenAPI schema.
+- Follow-up: implement Core models/service/wiring/problems and run the focused Python suite before Studio changes.
+
+### 2026-07-19 — Implement and verify Core queued-run context binding
+
+- Files changed: `services/core/src/mensura_core/{models,context_pack_models,context_pack_repositories,exceptions,service,main}.py`, `services/core/src/mensura_core/api/{problems,routers/tasks}.py`, `services/core/tests/{test_api,test_openapi}.py`, and `docs/agent_memory.md`.
+- Wiring: `create_app` now constructs one immutable context-pack repository instance and injects it into both `ContextPackService` and `CoreService`; run validation therefore sees exactly the packs created through the API, including injected adapters.
+- Validation order: the task must exist first; Core then retrieves the pack under the task workspace. A globally absent digest returns the existing `404 context-pack-not-found` problem, while a digest found under a different workspace returns dedicated `409 context-pack-workspace-mismatch` details containing both ownership ids.
+- Persistence/read model: the process-local `Run` record stores the exact `contextPackId` plus a derived frozen compact reference with pack/workspace/inventory/schema identities and aggregate file/byte evidence. GET returns that stored binding unchanged; no provider or worker consumes it.
+- Strict request: run POST now requires `{ contextPackId: "sha256:<64 lowercase hex>" }`; missing bodies, legacy `{}`, malformed digests, and extra mutable-selection fields are rejected through the existing RFC 9457 validation contract.
+- Verification: Ruff lint and format pass; all 51 Core tests pass with warnings treated as errors. New coverage uses real Vault inventory/context-pack creation and verifies success/GET persistence, missing task/pack, cross-workspace mismatch, strict legacy/invalid payload rejection, and exact camelCase OpenAPI schemas.
+- Follow-up: update the Studio client, require explicit workspace-correct pack selection in both created/looked-up task actions, and render the persisted immutable binding in run details.
+
+### 2026-07-19 — Prepare the Studio queued-run binding step
+
+- Files changed: `docs/agent_memory.md`.
+- Query/state plan: reuse `queryKeys.contextPacks(task.workspaceId)` for server-owned pack summaries; keep only the selected pack id as local component state. Looked-up tasks use their own workspace ownership rather than assuming the currently active workspace.
+- Mutation plan: disable creation until the list succeeds and one current pack is explicitly selected; POST the typed request; seed/refetch the returned run as before; preserve selection and expose action-local Problem Details on failure.
+- Review plan: before submission show the full selected immutable id and compact file/byte summary. After creation or arbitrary run lookup, show the stored context-pack id, workspace/inventory ids, schema version, file count, total file bytes, and captured preview bytes.
+- Test plan: cover JSON request shape, empty/loading/selection gating, visible preflight summary, successful create/refetch binding, selection preservation on RFC 9457 failure, looked-up task flow, app-level vertical flow, and run inspector rendering.
+- Follow-up: implement the client/components/styles/tests, then verify strict Studio checks before documentation and native acceptance.
+
+### 2026-07-19 — Implement and verify Studio context-bound run creation
+
+- Files changed: `apps/studio/src/api/{coreClient,coreClient.test}.ts`, `apps/studio/src/features/runs/{StartRunAction,StartRunAction.test,RunDetails,RunInspector.test}.tsx`, `apps/studio/src/features/tasks/{TaskDetails,TaskInspector.test}.tsx`, `apps/studio/src/app/App.test.tsx`, `apps/studio/src/styles.css`, and `docs/agent_memory.md`.
+- Client: `createRun(taskId, { contextPackId })` now sends strict camelCase JSON with an explicit content type; the typed response includes the persisted direct id and compact context reference.
+- Selection UX: each created or looked-up task queries immutable pack summaries by that task's actual workspace, renders a labeled native selector, keeps Start run absent/disabled until packs load and a current pack is selected, and shows the full digest plus file/file-byte/preview-byte evidence before submission.
+- Failure behavior: pack-list and mutation problems stay within the action; the selected id is preserved when Core rejects creation; no optimistic run or binding is fabricated.
+- Read UX: created and arbitrarily fetched runs display the exact bound pack digest, context workspace, source Vault inventory, schema version, file count, total file bytes, and captured preview bytes, explicitly labeling the pack as immutable execution context.
+- Verification: strict Studio TypeScript checking, all 43 tests across 13 files, and the Vite production build pass. Coverage includes client JSON, no-pack guidance, selection gating/preflight, persisted selection on RFC 9457 failure, created-task and looked-up-task flows, full app flow, and run-inspector binding details.
+- Follow-up: update all user-facing READMEs, execute full workspace/Core/native checks, and manually verify the real Mensura inventory -> pack -> task -> bound queued run flow.
+
+### 2026-07-19 — Prepare cycle 9 documentation and acceptance
+
+- Files changed: `docs/agent_memory.md`.
+- Documentation plan: replace every claim that queued runs need no body or are unbound; document the required request, ownership mismatch problem, compact read reference, process-local durability, and no-execution boundary in root/Core/Studio READMEs.
+- Acceptance plan: run the root workspace gate, full warning-strict Core suite, Rust formatting/check/build, exact endpoint/OpenAPI checks, a production scan for provider/subprocess/repository-write additions in the run slice, and a live Core API sequence against this repository. If native UI verification is practical, launch the Tauri shell and confirm the binding visually without exercising any provider or write operation.
+- Follow-up: document, verify, correct any integration defects, then record the final resumable state and next vertical slice.
+
+### 2026-07-19 — Complete work cycle 9: immutable context-bound queued runs
+
+- Files changed: 28 files across root/Core/Studio documentation, shared API/domain/context-pack contracts, Core run/context-pack models/repositories/service/wiring/problems/tests, and Studio client/run/task components/styles/tests; exact paths are available in the cycle commit/diff.
+- Contract delivered: `POST /api/v1/tasks/{task_id}/runs` now requires `{ contextPackId }`; `Run` returns direct `contextPackId` and a compact immutable `contextPack` reference. Existing route/version/status/Location behavior is preserved; legacy bodyless clients now receive RFC 9457 validation errors by design.
+- Integrity delivered: Core validates task existence, pack retrieval, and equal workspace ownership before adding a run. A missing pack is `404 context-pack-not-found`; cross-workspace use is `409 context-pack-workspace-mismatch`; malformed/missing/extra request fields are `422 validation-error` with JSON pointers.
+- Studio delivered: created and looked-up tasks load packs from their own workspace, require explicit selection, show the exact digest and aggregate evidence before enabling Start run, preserve selection on failure, and render the persisted binding for mutation results and arbitrary run lookup.
+- Automated verification: `pnpm check` passes 17 shared tests, 43 Studio tests, strict TypeScript builds, Vite production build, and `cargo check`; Ruff lint/format and all 51 Core tests pass with warnings treated as errors; `cargo fmt --check` and `git diff --check` pass. Production run-slice scan found no provider/subprocess/repository-write addition.
+- Native packaging: optimized Tauri `--no-bundle` build succeeded. The complete macOS `.app` and `Mensura Studio_0.1.0_aarch64.dmg` build succeeded when macOS packaging ran outside the filesystem sandbox; the first sandboxed DMG attempt failed only inside `bundle_dmg.sh` after the `.app` had already been produced.
+- Live Core acceptance: fresh Uvicorn against `/Users/makedoni/Documents/mensura` built a 149-included/23-excluded inventory, created two-file pack `sha256:fb22e992119dd90ae14239350ef346cd7160b6483c9a8fc8a86e4d499d38f53b`, created task `93579a7d-3acc-4739-a50e-34cba68443cd`, and POST/GET returned queued run `cb79ae2b-0d7d-4f3e-a444-0eaac36fda0e` with the same workspace/inventory/schema and 5,148 file/preview bytes.
+- Native Studio acceptance: the release `.app` restored/reconciled workspace state, showed Start run disabled before selection, displayed the full selected digest plus `2 files · 5.0 KiB` evidence, created queued run `efcf01f2-4fa0-4684-a070-14e2313b0269`, and rendered the exact persisted binding in both the mutation result and run inspector. Studio and Core then shut down cleanly.
+- Intentionally deferred: provider/model calls, prompt assembly, repository writes, worker/background queue, SSE, orchestration, run transitions beyond queued, durable persistence, task/run collections, and migration compatibility for the deliberately breaking pre-execution v1 request change.
+- Next recommended vertical slice: add one manually triggered, no-repository-write provider execution boundary that consumes only the persisted context-pack binding, records explicit queued/planning/executing/succeeded-or-failed state and bounded structured output, and exposes it in Studio. Keep provider credentials/configuration and prompt versioning explicit and adapter-backed.
 
 ### 2026-07-19 — Start work cycle 8: immutable context packs
 
@@ -654,19 +732,19 @@
 - Python 3.12 FastAPI Core service with enabled OpenAPI and seventeen implemented HTTP operations across fourteen paths.
 - Workspace creation/listing with exact-root conflict detection in a process-local repository.
 - Task creation/retrieval tied to an existing workspace; created tasks begin in `ready` status.
-- Placeholder run creation/retrieval; created runs remain `queued` and perform no orchestration or side effects.
+- Context-bound run creation/retrieval; every created run requires and stores an immutable same-workspace context pack, remains `queued`, and performs no orchestration or side effects.
 - RFC 9457 `application/problem+json` responses for resource misses, conflicts, request validation, framework HTTP errors, and generic internal failures.
 - CamelCase JSON contracts aligned with TypeScript Workspace/Task ownership and documented in OpenAPI.
-- Forty-seven passing Core service/runner/API/OpenAPI/Git/Vault/context-pack tests plus successful real-Uvicorn repository inspection, Guard execution, inventory, filtering, preview retrieval, and immutable pack creation/get/list.
+- Fifty-one passing Core service/runner/API/OpenAPI/Git/Vault/context-pack/run-binding tests plus successful real-Uvicorn repository inspection, Guard execution, inventory, filtering, preview retrieval, immutable pack creation/get/list, and bound run POST/GET.
 - Tauri 2 desktop Studio with React 19, Vite 8, a single resizable window, desktop app icons, CSP, and a local-Core-only native HTTP capability.
 - TanStack Query-backed Core health polling, workspace list/create behavior, task lookup, and run lookup with explicit loading, empty, success, connection-error, and RFC 9457 error states.
 - Shared Health, workspace transport, and Problem Details contracts aligned with Core's camelCase responses and nullable fields.
-- Forty-two passing Studio client/component/acceptance tests and successful native release binary, macOS `.app`, and DMG builds.
+- Forty-three passing Studio client/component/acceptance tests and successful native release binary, macOS `.app`, and DMG builds.
 - Verified live desktop connectivity from the release Tauri WebView to Core health and workspace endpoints.
 - Persisted active workspace selection with stale-ID reconciliation after Core restart.
 - Accessible active-workspace task creation with client validation, RFC 9457 failures, value preservation on failure, and immediate ready-task details.
-- Reusable queued-run creation from both created and looked-up tasks, with task/run query refresh and immediate queued-run details.
-- Verified live Core workspace -> ready task -> queued run POST/GET sequence.
+- Reusable queued-run creation from both created and looked-up tasks, with explicit immutable pack selection, task/run query refresh, and immediate bound-run details.
+- Verified live Core and native Studio workspace -> Vault inventory -> immutable context pack -> ready task -> context-bound queued run POST/GET sequence.
 - Isolated shared repository summary/diff-metadata contracts with no patch or file-content fields.
 - Replaceable read-only `GitRepositoryAdapter` with a GitPython implementation for branch, detached HEAD, clean/dirty, staged/unstaged/untracked counts, and safe changed-path metadata.
 - Workspace-scoped repository inspection endpoint with dedicated RFC 9457 problems for missing paths, non-repositories, and unsupported Git states.
@@ -691,8 +769,8 @@
 
 ### MVP
 
-1. Bind a reviewed immutable context pack to queued run creation, validate workspace ownership, persist the immutable run-context reference, and show it in Studio before any provider call.
-2. Implement one observable execution flow: queued run with reviewed context -> explicit provider/runner adapter -> safe diff metadata -> Guard -> review -> approve/reject.
+1. Implement one manually triggered, no-repository-write provider execution step that consumes only the persisted immutable run context, uses explicit provider/prompt adapters, records bounded structured results/errors, and exposes status in Studio.
+2. Extend that observable flow from reviewed context -> isolated change proposal/safe diff metadata -> Guard -> review -> approve/reject without bypassing the immutable binding.
 3. Add Docker Compose only for dependencies required by the working flow, plus CI for format, typecheck, tests, and builds.
 4. Replace temporary in-memory adapters with durable storage where acceptance criteria require restart-safe history.
 
@@ -802,7 +880,14 @@
 - Decision: create context packs only from explicit paths in one latest Vault inventory; capture bounded UTF-8 preview evidence or metadata-only binary evidence; hash every complete allowed file; and derive the immutable resource id from canonical schema/workspace/inventory/limits/summary/entry JSON.
 - Reason: a future provider run must have human-reviewable, reproducible input before orchestration exists. Including inventory identity, content digests, exact ordered paths, capture modes, and hard bounds makes evidence changes visible without inventing prompt or model payload formats.
 - Alternatives considered: mutable selections, random UUID ids, creation timestamps inside the digest, full file bodies, binary rejection, semantic retrieval, task/run mutation in this cycle, and provider-specific envelopes. Rejected or deferred because they weaken reproducibility, exceed safe review bounds, or couple this evidence layer to execution that does not yet exist.
-- Consequences: unchanged selection against one inventory idempotently returns one `sha256:<hex>` resource; rebuilding inventory deliberately changes identity even if paths are unchanged; text capture is capped at 16 KiB/file and 256 KiB/pack; binary content is represented only by metadata/digest; packs disappear on Core restart; no update/delete endpoint or repository write exists; task/run binding is the next explicit compatibility step.
+- Consequences: unchanged selection against one inventory idempotently returns one `sha256:<hex>` resource; rebuilding inventory deliberately changes identity even if paths are unchanged; text capture is capped at 16 KiB/file and 256 KiB/pack; binary content is represented only by metadata/digest; packs disappear on Core restart; no update/delete endpoint or repository write exists; queued runs now consume this identity through the separate binding decision below.
+
+### Immutable context-bound queued runs
+
+- Decision: require one valid `contextPackId` for every new run, store that direct digest with a compact immutable summary, and reject task/pack workspace mismatch before persistence.
+- Reason: execution must be tied to the exact human-reviewable evidence already captured, not to mutable paths, a client-reported summary, or a provider-specific payload. A direct id is the durable semantic binding; the compact stored reference keeps run inspection useful without needing to reconstruct or embed the manifest.
+- Alternatives considered: nullable bindings for legacy clients, silently choosing the newest pack, accepting file paths during run creation, storing only a digest with no readable evidence, and copying the complete manifest into each run. Rejected because they permit unreviewed ambiguity, duplicate mutable selection, weaken inspection, or duplicate large evidence bodies.
+- Consequences: bodyless pre-cycle clients intentionally fail v1 validation; Studio must explicitly select a pack owned by the task workspace; Core uses one injected immutable repository for creation and validation; queued runs remain inert; both packs and runs still disappear on restart; provider/prompt execution must consume the persisted binding rather than accept a replacement selection.
 
 ## Open Questions
 
@@ -811,6 +896,5 @@
 - Which model provider should power the first non-stub run, and how should BYOK credentials be stored on each platform?
 - What exact sandbox guarantees are required for local command execution on macOS, Linux, and Windows?
 - Which project-specific ignore mechanism should extend the fixed Vault rules before team-scale indexing, and when should hashing/durable branch-aware snapshots become necessary?
-- Should queued run creation require a context pack immediately, or first allow an explicit nullable immutable reference while older clients migrate?
 - How are plugin signatures rooted and verified, and which permissions are allowed for the first local plugin loader?
 - Are the `[cite:…]` markers in the specifications backed by a source bibliography that should be added to the repository?

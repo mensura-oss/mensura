@@ -47,6 +47,17 @@ export interface ContextPackSummary {
   summary: ContextPackFileSummary;
 }
 
+/** Compact immutable evidence reference embedded in run read models. */
+export interface ContextPackReference {
+  id: ContextPackDigest;
+  workspaceId: EntityId;
+  inventoryId: EntityId;
+  schemaVersion: typeof CONTEXT_PACK_SCHEMA_VERSION;
+  fileCount: number;
+  totalFileBytes: number;
+  totalPreviewBytes: number;
+}
+
 export interface ContextPackManifest extends ContextPackSummary {
   limits: ContextPackLimits;
   files: readonly ContextPackFileEntry[];

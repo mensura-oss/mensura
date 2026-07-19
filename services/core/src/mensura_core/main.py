@@ -42,9 +42,11 @@ def create_app(
         openapi_url="/openapi.json",
     )
     core_repository = repository or InMemoryCoreRepository()
+    immutable_context_pack_repository = context_pack_repository or InMemoryContextPackRepository()
     app.state.core_service = CoreService(
         core_repository,
         git_repository or GitPythonRepositoryAdapter(),
+        immutable_context_pack_repository,
     )
     app.state.guard_service = GuardService(
         core_repository,
@@ -61,7 +63,7 @@ def create_app(
     app.state.context_pack_service = ContextPackService(
         core_repository,
         inventory_repository,
-        context_pack_repository or InMemoryContextPackRepository(),
+        immutable_context_pack_repository,
     )
     install_problem_handlers(app)
     app.include_router(health_router)

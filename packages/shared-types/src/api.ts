@@ -1,4 +1,5 @@
 import type { AgentRole, Workspace } from "./domain.js";
+import type { ContextPackDigest } from "./context-pack.js";
 
 export interface HealthResponse {
   status: "ok";
@@ -21,6 +22,10 @@ export interface CreateTaskRequest {
   title: string;
   description: string;
   assignedRole?: AgentRole;
+}
+
+export interface CreateRunRequest {
+  contextPackId: ContextPackDigest;
 }
 
 export interface ProblemFieldError {

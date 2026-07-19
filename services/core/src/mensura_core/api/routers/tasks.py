@@ -3,8 +3,12 @@ from uuid import UUID
 from fastapi import APIRouter, Response, status
 
 from mensura_core.api.dependencies import CoreServiceDependency
-from mensura_core.api.problems import NOT_FOUND_RESPONSE, VALIDATION_RESPONSE
-from mensura_core.models import Run, Task, TaskCreate
+from mensura_core.api.problems import (
+    CONFLICT_RESPONSE,
+    NOT_FOUND_RESPONSE,
+    VALIDATION_RESPONSE,
+)
+from mensura_core.models import Run, RunCreate, Task, TaskCreate
 
 router = APIRouter(tags=["tasks"])
 
@@ -40,14 +44,15 @@ async def create_task(
     "/tasks/{task_id}/runs",
     response_model=Run,
     status_code=status.HTTP_201_CREATED,
-    responses={**NOT_FOUND_RESPONSE, **VALIDATION_RESPONSE},
+    responses={**NOT_FOUND_RESPONSE, **CONFLICT_RESPONSE, **VALIDATION_RESPONSE},
     summary="Create a queued run",
 )
 async def create_run(
     task_id: UUID,
+    payload: RunCreate,
     response: Response,
     service: CoreServiceDependency,
 ) -> Run:
-    run = service.create_run(task_id)
+    run = service.create_run(task_id, payload)
     response.headers["Location"] = f"/api/v1/runs/{run.id}"
     return run

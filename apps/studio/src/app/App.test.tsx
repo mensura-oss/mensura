@@ -27,9 +27,36 @@ const task: Task = {
   updatedAt: "2026-07-19T12:00:00Z",
 };
 
+const contextPackId = `sha256:${"c".repeat(64)}` as const;
+const contextPack = {
+  id: contextPackId,
+  digest: contextPackId,
+  workspaceId: workspace.id,
+  inventoryId: "f6b3c0c2-42a1-4a4d-81f3-82918af050ae",
+  schemaVersion: "1" as const,
+  summary: {
+    fileCount: 1,
+    textFileCount: 1,
+    binaryFileCount: 0,
+    totalFileBytes: 128,
+    totalPreviewBytes: 128,
+    truncatedTextFileCount: 0,
+  },
+};
+
 const run: Run = {
   id: "9dc58c91-105d-43af-95cb-32e546ce4c9f",
   taskId: task.id,
+  contextPackId,
+  contextPack: {
+    id: contextPackId,
+    workspaceId: workspace.id,
+    inventoryId: contextPack.inventoryId,
+    schemaVersion: "1",
+    fileCount: 1,
+    totalFileBytes: 128,
+    totalPreviewBytes: 128,
+  },
   status: "queued",
   startedAt: null,
   finishedAt: null,
@@ -85,6 +112,8 @@ describe("App task flow", () => {
         ),
       listWorkspaces: () =>
         Promise.resolve({ items: workspaces, total: workspaces.length }),
+      listContextPacks: () =>
+        Promise.resolve({ items: [contextPack], total: 1 }),
     });
 
     renderWithAppProviders(<App />, client);
@@ -108,9 +137,15 @@ describe("App task flow", () => {
       screen.getByText("Repository inspection is independently unavailable."),
     ).toBeVisible();
 
+    await user.selectOptions(
+      screen.getByLabelText("Immutable context pack"),
+      contextPackId,
+    );
     await user.click(screen.getByRole("button", { name: "Start run" }));
 
-    expect(await screen.findByText("Run created and queued.")).toBeVisible();
+    expect(
+      await screen.findByText("Run created and queued with immutable context."),
+    ).toBeVisible();
     expect(screen.getByText(run.id)).toBeVisible();
     expect(createWorkspace).toHaveBeenCalledTimes(1);
     expect(createTask).toHaveBeenCalledWith({
@@ -118,6 +153,6 @@ describe("App task flow", () => {
       title: task.title,
       description: task.description,
     });
-    expect(createRun).toHaveBeenCalledWith(task.id);
+    expect(createRun).toHaveBeenCalledWith(task.id, { contextPackId });
   });
 });

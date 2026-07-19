@@ -98,9 +98,20 @@ describe("Core client", () => {
   });
 
   it("creates a queued run for an encoded task ID", async () => {
+    const contextPackId = `sha256:${"a".repeat(64)}` as const;
     const run = {
       id: "9dc58c91-105d-43af-95cb-32e546ce4c9f",
       taskId: "task/id",
+      contextPackId,
+      contextPack: {
+        id: contextPackId,
+        workspaceId: "workspace/id",
+        inventoryId: "inventory/id",
+        schemaVersion: "1" as const,
+        fileCount: 2,
+        totalFileBytes: 2048,
+        totalPreviewBytes: 1024,
+      },
       status: "queued" as const,
       startedAt: null,
       finishedAt: null,
@@ -110,10 +121,16 @@ describe("Core client", () => {
     const fetcher = vi.fn(() => Promise.resolve(Response.json(run, { status: 201 })));
     const client = createCoreClient({ baseUrl: "http://core.test", fetcher });
 
-    await expect(client.createRun(run.taskId)).resolves.toEqual(run);
+    await expect(
+      client.createRun(run.taskId, { contextPackId }),
+    ).resolves.toEqual(run);
     expect(fetcher).toHaveBeenCalledWith(
       "http://core.test/api/v1/tasks/task%2Fid/runs",
-      { method: "POST" },
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contextPackId }),
+      },
     );
   });
 

@@ -54,9 +54,17 @@ JSON property names use camelCase. Resource identifiers are UUIDs and timestamps
 | `GET` | `/api/v1/tasks/{task_id}` | Returns one task |
 | `POST` | `/api/v1/tasks` | Creates a ready task in an existing workspace |
 | `GET` | `/api/v1/runs/{run_id}` | Returns one run |
-| `POST` | `/api/v1/tasks/{task_id}/runs` | Creates a queued placeholder run |
+| `POST` | `/api/v1/tasks/{task_id}/runs` | Creates a queued run bound to an immutable context pack |
 
-`POST /api/v1/tasks/{task_id}/runs` only records a queued run. No worker consumes it yet. SSE events are intentionally deferred until run execution has real events to expose.
+`POST /api/v1/tasks/{task_id}/runs` requires this strict body:
+
+```json
+{
+  "contextPackId": "sha256:<64 lowercase hexadecimal characters>"
+}
+```
+
+Core resolves the task first, requires the exact immutable pack to exist, and rejects a pack owned by another workspace. The stored/read run includes `contextPackId` plus a compact `contextPack` reference with workspace/inventory/schema identities and aggregate file/byte evidence. It only records a queued run; no worker or provider consumes it. SSE events are intentionally deferred until execution has real events to expose.
 
 ## Read-only repository inspection
 
@@ -89,7 +97,7 @@ Text entries capture at most 16 KiB of strict UTF-8 and report preview/total byt
 
 The manifest pins schema version, workspace and inventory ids, explicit limits, aggregate summary, ordered file metadata, per-file content digests, capture modes, and bounded preview text. Compact canonical UTF-8 JSON with sorted object keys is SHA-256 hashed; `sha256:<hex>` becomes both the pack id and digest. Creation time is intentionally absent. Repeating the same unchanged selection against the same inventory returns the exact stored manifest with `created: false`. There is no update or delete endpoint.
 
-Context packs are not yet attached to tasks/runs and are not prompt or provider payloads. They remain process-local review artifacts until durable execution history is introduced.
+Context packs can be selected as the required immutable evidence binding for a queued run. Runs reference the pack by digest and expose only a compact summary; they do not copy mutable path selections or turn the manifest into a prompt/provider payload. Packs and runs remain process-local until durable execution history is introduced.
 
 ## Guard v1 configuration and execution
 
@@ -164,6 +172,7 @@ Context packs additionally use:
 - `urn:mensura:problem:context-pack-too-large` (`413`);
 - `urn:mensura:problem:context-pack-file-changed` (`409`);
 - `urn:mensura:problem:context-pack-not-found` (`404`).
+- `urn:mensura:problem:context-pack-workspace-mismatch` (`409`) when a task and selected pack have different owners.
 
 They also reuse Vault inventory/path/exclusion problems when those conditions are identical.
 

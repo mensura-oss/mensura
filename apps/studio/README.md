@@ -1,6 +1,6 @@
 # Mensura Studio
 
-Mensura Studio is the Tauri 2 desktop client for the local Mensura Core service. The current vertical slice supports selecting a workspace, inspecting its local Git state, building and browsing a deterministic Vault file inventory, selecting exact files into an immutable context pack, manually running configured Guard checks, creating a task, and recording a queued placeholder run while keeping orchestration explicitly out of scope.
+Mensura Studio is the Tauri 2 desktop client for the local Mensura Core service. The current vertical slice supports selecting a workspace, inspecting its local Git state, building and browsing a deterministic Vault file inventory, selecting exact files into an immutable context pack, manually running configured Guard checks, creating a task, and recording a queued run bound to one reviewed immutable context pack while keeping execution and orchestration explicitly out of scope.
 
 ## Requirements
 
@@ -54,7 +54,8 @@ pnpm studio:build
 - Context-pack builder with up to 500 selectable inventory entries, exact pre-creation path review, selected/preview-limit counters, immutable creation, process-local pack list, and read-only manifest inspection
 - Manual Guard panel with latest-result loading, `Run checks`, pass/fail and blocking state, aggregate counts, compact lint/test cards, and collapsed bounded output
 - Task creation for the active workspace plus task lookup by UUID
-- Queued run creation from created or looked-up tasks plus run lookup by UUID
+- Context-pack selection and preflight summary before queued run creation from created or looked-up tasks
+- Run lookup/details showing the persisted immutable pack id, ownership/inventory identities, schema, file count, and byte summary
 - RFC 9457 Problem Details and connection errors shown without losing server fields
 
 The repository panel is independent from the rest of the shell. A missing path, non-Git root, or unsupported repository state is shown as RFC 9457 Problem Details without disabling workspace/task/run actions. It never renders patches or file contents and exposes no Git mutation controls.
@@ -65,6 +66,8 @@ The Vault panel is manual and read-only. Build inventory traverses the current w
 
 The context-pack panel uses that latest inventory but has its own candidate query so it can expose up to the API's 500-file listing limit without colliding with the Vault inspector cache. Before creation it shows every selected path, text-preview versus binary-metadata policy, file count, and a conservative bounded-preview estimate. Core remains authoritative for validation. After creation Studio immediately opens the exact returned locked manifest and shows pack/inventory ids, counts, paths, capture/truncation metadata, and content digests; it intentionally does not dump captured preview bodies into the main shell.
 
+Every task run action loads immutable packs using the task's own workspace id. The user must explicitly select one; Studio shows its full digest and compact file/byte evidence before enabling `Start run`. Core revalidates ownership and persists the binding. Created and looked-up run details make that exact immutable execution context visible; selection is preserved if creation returns Problem Details.
+
 The active workspace ID persists in localStorage, but Core data remains in memory. Restarting Core removes its workspaces/tasks/runs, and Studio clears a restored workspace selection when that ID no longer exists. Repository status is inspected live from the workspace `rootPath`; for this MVP the path itself must be a committed, non-bare Git worktree root.
 
-The app does not start Core itself. A created run remains `queued`; no worker consumes it. Context packs are not yet attached to tasks/runs or rendered into prompts/provider payloads. Monaco, terminals, full repository tree/navigation, file editing, content/semantic search, embeddings, full diff or patch viewing, Git writes, task/run lists, live run events, Kanban, durable Vault/context-pack history or watchers, the full Guard policy engine/history/config editor, Hub, plugins, authentication, and settings are intentionally deferred.
+The app does not start Core itself. A created run remains `queued`; no worker or provider consumes its bound context pack, and no prompt/provider payload is assembled. Monaco, terminals, full repository tree/navigation, file editing, content/semantic search, embeddings, full diff or patch viewing, Git writes, task/run lists, live run events, Kanban, durable Vault/context-pack/run history or watchers, the full Guard policy engine/history/config editor, Hub, plugins, authentication, and settings are intentionally deferred.

@@ -21,7 +21,11 @@ export function TaskDetails({ task }: { task: Task }) {
           { label: "Updated", value: formatTimestamp(task.updatedAt) },
         ]}
       />
-      <StartRunAction key={task.id} taskId={task.id} />
+      <StartRunAction
+        key={task.id}
+        taskId={task.id}
+        workspaceId={task.workspaceId}
+      />
     </div>
   );
 }

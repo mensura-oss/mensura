@@ -11,6 +11,8 @@ class ContextPackRepository(Protocol):
 
     def get(self, workspace_id: UUID, context_pack_id: str) -> ContextPackManifest | None: ...
 
+    def find_by_id(self, context_pack_id: str) -> ContextPackManifest | None: ...
+
     def list_for_workspace(self, workspace_id: UUID) -> Sequence[ContextPackManifest]: ...
 
 
@@ -32,6 +34,17 @@ class InMemoryContextPackRepository:
     def get(self, workspace_id: UUID, context_pack_id: str) -> ContextPackManifest | None:
         with self._lock:
             return self._manifests.get((workspace_id, context_pack_id))
+
+    def find_by_id(self, context_pack_id: str) -> ContextPackManifest | None:
+        with self._lock:
+            return next(
+                (
+                    manifest
+                    for (_, stored_id), manifest in self._manifests.items()
+                    if stored_id == context_pack_id
+                ),
+                None,
+            )
 
     def list_for_workspace(self, workspace_id: UUID) -> Sequence[ContextPackManifest]:
         with self._lock:

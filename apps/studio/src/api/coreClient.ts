@@ -5,6 +5,7 @@ import type {
   CreateTaskRequest,
   CreateContextPackRequest,
   CreateContextPackResponse,
+  CreateRunRequest,
   HealthResponse,
   GuardRunRequest,
   GuardRunResponse,
@@ -32,7 +33,7 @@ export interface CoreClient {
     workspaceId: string,
     input: CreateContextPackRequest,
   ): Promise<CreateContextPackResponse>;
-  createRun(taskId: string): Promise<Run>;
+  createRun(taskId: string, input: CreateRunRequest): Promise<Run>;
   createGuardRun(
     workspaceId: string,
     input?: GuardRunRequest,
@@ -171,10 +172,14 @@ export function createCoreClient(options?: {
         },
       );
     },
-    createRun(taskId) {
+    createRun(taskId, input) {
       return request<Run>(
         `/api/v1/tasks/${encodeURIComponent(taskId)}/runs`,
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        },
       );
     },
     createTask(input) {

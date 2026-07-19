@@ -1,3 +1,8 @@
+import type {
+  ContextPackDigest,
+  ContextPackReference,
+} from "./context-pack.js";
+
 export type EntityId = string;
 export type IsoDateTime = string;
 
@@ -65,6 +70,8 @@ export type RunStatus = (typeof RUN_STATUSES)[number];
 export interface Run {
   id: EntityId;
   taskId: EntityId;
+  contextPackId: ContextPackDigest;
+  contextPack: ContextPackReference;
   status: RunStatus;
   startedAt?: IsoDateTime | null;
   finishedAt?: IsoDateTime | null;

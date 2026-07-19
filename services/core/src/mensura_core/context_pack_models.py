@@ -3,14 +3,10 @@ from uuid import UUID
 
 from pydantic import Field, StringConstraints
 
-from mensura_core.models import ApiModel, ResourceModel
+from mensura_core.models import ApiModel, ContextPackDigest, ResourceModel
 from mensura_core.vault_models import VaultFileKind
 
 CONTEXT_PACK_SCHEMA_VERSION = "1"
-ContextPackDigest = Annotated[
-    str,
-    StringConstraints(pattern=r"^sha256:[0-9a-f]{64}$"),
-]
 ContextPackPath = Annotated[str, StringConstraints(min_length=1, max_length=4096)]
 
 

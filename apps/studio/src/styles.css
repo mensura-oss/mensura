@@ -541,6 +541,67 @@ input:focus-visible {
   font-size: 0.68rem;
 }
 
+.run-context-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.7rem;
+}
+
+.run-context-picker select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid #2b374c;
+  border-radius: 0.45rem;
+  padding: 0.45rem 0.65rem;
+  color: #e5e7eb;
+  background: #0d1421;
+  font-size: 0.7rem;
+}
+
+.run-context-help,
+.run-context-empty {
+  margin: 0;
+  color: #7f8ba3;
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+.run-context-empty {
+  border: 1px dashed #2b374a;
+  border-radius: 0.5rem;
+  padding: 0.7rem;
+}
+
+.run-context-selection {
+  min-width: 0;
+  display: grid;
+  gap: 0.3rem;
+  border: 1px solid #155e75;
+  border-radius: 0.55rem;
+  padding: 0.7rem;
+  background: #0e2935;
+}
+
+.run-context-selection span {
+  color: #67e8f9;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.run-context-selection code {
+  overflow-wrap: anywhere;
+  color: #c9f8ff;
+  font-size: 0.67rem;
+}
+
+.run-context-selection small {
+  color: #94a3b8;
+  font-size: 0.65rem;
+}
+
 .success-message {
   margin: 0;
   color: #6ee7b7;

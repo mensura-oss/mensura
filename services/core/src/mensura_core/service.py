@@ -2,10 +2,18 @@ from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from mensura_core.exceptions import ResourceConflictError, ResourceNotFoundError
+from mensura_core.context_pack_repositories import ContextPackRepository
+from mensura_core.exceptions import (
+    ContextPackNotFoundError,
+    ContextPackWorkspaceMismatchError,
+    ResourceConflictError,
+    ResourceNotFoundError,
+)
 from mensura_core.git_adapter import GitRepositoryAdapter
 from mensura_core.models import (
     Run,
+    RunContextPackReference,
+    RunCreate,
     RunStatus,
     Task,
     TaskCreate,
@@ -32,12 +40,14 @@ class CoreService:
         self,
         repository: CoreRepository,
         git_repository: GitRepositoryAdapter,
+        context_pack_repository: ContextPackRepository,
         *,
         id_factory: IdFactory = uuid4,
         clock: Clock = utc_now,
     ) -> None:
         self._repository = repository
         self._git_repository = git_repository
+        self._context_pack_repository = context_pack_repository
         self._id_factory = id_factory
         self._clock = clock
 
@@ -88,12 +98,37 @@ class CoreService:
             raise ResourceNotFoundError("Task", task_id)
         return task
 
-    def create_run(self, task_id: UUID) -> Run:
-        self.get_task(task_id)
+    def create_run(self, task_id: UUID, payload: RunCreate) -> Run:
+        task = self.get_task(task_id)
+        context_pack = self._context_pack_repository.get(task.workspace_id, payload.context_pack_id)
+        if context_pack is None:
+            context_pack_in_other_workspace = self._context_pack_repository.find_by_id(
+                payload.context_pack_id
+            )
+            if context_pack_in_other_workspace is not None:
+                raise ContextPackWorkspaceMismatchError(
+                    task.id,
+                    task.workspace_id,
+                    payload.context_pack_id,
+                    context_pack_in_other_workspace.workspace_id,
+                )
+            raise ContextPackNotFoundError(payload.context_pack_id)
+
         timestamp = ensure_utc_timestamp(self._clock())
+        summary = context_pack.summary
         run = Run(
             id=self._id_factory(),
             task_id=task_id,
+            context_pack_id=context_pack.id,
+            context_pack=RunContextPackReference(
+                id=context_pack.id,
+                workspace_id=context_pack.workspace_id,
+                inventory_id=context_pack.inventory_id,
+                schema_version=context_pack.schema_version,
+                file_count=summary.file_count,
+                total_file_bytes=summary.total_file_bytes,
+                total_preview_bytes=summary.total_preview_bytes,
+            ),
             status=RunStatus.QUEUED,
             created_at=timestamp,
             updated_at=timestamp,

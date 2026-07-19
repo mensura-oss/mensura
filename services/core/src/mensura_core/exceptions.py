@@ -135,3 +135,17 @@ class ContextPackFileChangedError(ContextPackError):
 class ContextPackNotFoundError(ContextPackError):
     def __init__(self, context_pack_id: str) -> None:
         super().__init__(f"Context pack '{context_pack_id}' was not found in this workspace.")
+
+
+class ContextPackWorkspaceMismatchError(ContextPackError):
+    def __init__(
+        self,
+        task_id: UUID,
+        task_workspace_id: UUID,
+        context_pack_id: str,
+        context_pack_workspace_id: UUID,
+    ) -> None:
+        super().__init__(
+            f"Task '{task_id}' belongs to workspace '{task_workspace_id}', but context pack "
+            f"'{context_pack_id}' belongs to workspace '{context_pack_workspace_id}'."
+        )

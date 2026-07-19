@@ -10,6 +10,10 @@ Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max
 RootPath = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=4096)]
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=240)]
 Description = Annotated[str, StringConstraints(strip_whitespace=True, max_length=10_000)]
+ContextPackDigest = Annotated[
+    str,
+    StringConstraints(pattern=r"^sha256:[0-9a-f]{64}$"),
+]
 
 
 class ApiModel(BaseModel):
@@ -107,9 +111,25 @@ class Task(ResourceModel):
     updated_at: AwareDatetime
 
 
+class RunCreate(ApiModel):
+    context_pack_id: ContextPackDigest
+
+
+class RunContextPackReference(ResourceModel):
+    id: ContextPackDigest
+    workspace_id: UUID
+    inventory_id: UUID
+    schema_version: Literal["1"]
+    file_count: Annotated[int, Field(ge=0)]
+    total_file_bytes: Annotated[int, Field(ge=0)]
+    total_preview_bytes: Annotated[int, Field(ge=0)]
+
+
 class Run(ResourceModel):
     id: UUID
     task_id: UUID
+    context_pack_id: ContextPackDigest
+    context_pack: RunContextPackReference
     status: RunStatus
     started_at: AwareDatetime | None = None
     finished_at: AwareDatetime | None = None

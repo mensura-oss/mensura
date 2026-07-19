@@ -1,3 +1,4 @@
+from pathlib import Path
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -29,6 +30,25 @@ def create_task(client: TestClient, workspace_id: str) -> dict:
     return response.json()
 
 
+def create_context_pack(
+    client: TestClient,
+    workspace_id: str,
+    root_path: Path,
+    *,
+    filename: str = "context.txt",
+) -> dict:
+    root_path.mkdir(parents=True, exist_ok=True)
+    (root_path / filename).write_text("immutable execution context\n", encoding="utf-8")
+    inventory_response = client.post(f"/api/v1/workspaces/{workspace_id}/vault/inventory")
+    assert inventory_response.status_code == 201
+    response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/context-packs",
+        json={"paths": [filename]},
+    )
+    assert response.status_code == 201
+    return response.json()["contextPack"]
+
+
 def test_health(client: TestClient) -> None:
     response = client.get("/health")
 
@@ -57,8 +77,8 @@ def test_create_and_list_workspaces(client: TestClient) -> None:
     assert listed_response.json() == {"items": [created], "total": 1}
 
 
-def test_create_get_task_and_create_get_run(client: TestClient) -> None:
-    workspace = create_workspace(client)
+def test_create_get_task_and_create_get_run(client: TestClient, tmp_path: Path) -> None:
+    workspace = create_workspace(client, root_path=str(tmp_path))
 
     task_response = client.post(
         "/api/v1/tasks",
@@ -75,15 +95,104 @@ def test_create_get_task_and_create_get_run(client: TestClient) -> None:
     assert task_response.headers["location"] == f"/api/v1/tasks/{task['id']}"
     assert client.get(f"/api/v1/tasks/{task['id']}").json() == task
 
-    run_response = client.post(f"/api/v1/tasks/{task['id']}/runs")
+    context_pack = create_context_pack(client, workspace["id"], tmp_path)
+    run_response = client.post(
+        f"/api/v1/tasks/{task['id']}/runs",
+        json={"contextPackId": context_pack["id"]},
+    )
     assert run_response.status_code == 201
     run = run_response.json()
     assert run["taskId"] == task["id"]
+    assert run["contextPackId"] == context_pack["id"]
+    assert run["contextPack"] == {
+        "id": context_pack["id"],
+        "workspaceId": workspace["id"],
+        "inventoryId": context_pack["inventoryId"],
+        "schemaVersion": "1",
+        "fileCount": 1,
+        "totalFileBytes": context_pack["summary"]["totalFileBytes"],
+        "totalPreviewBytes": context_pack["summary"]["totalPreviewBytes"],
+    }
     assert run["status"] == "queued"
     assert run["startedAt"] is None
     assert run["finishedAt"] is None
     assert run_response.headers["location"] == f"/api/v1/runs/{run['id']}"
     assert client.get(f"/api/v1/runs/{run['id']}").json() == run
+
+
+def test_run_creation_rejects_missing_context_pack(client: TestClient) -> None:
+    workspace = create_workspace(client)
+    task = create_task(client, workspace["id"])
+    missing_pack_id = f"sha256:{'a' * 64}"
+
+    response = client.post(
+        f"/api/v1/tasks/{task['id']}/runs",
+        json={"contextPackId": missing_pack_id},
+    )
+
+    assert response.status_code == 404
+    assert response.headers["content-type"] == "application/problem+json"
+    assert response.json()["type"] == "urn:mensura:problem:context-pack-not-found"
+    assert missing_pack_id in response.json()["detail"]
+
+
+def test_run_creation_rejects_context_pack_from_another_workspace(
+    client: TestClient, tmp_path: Path
+) -> None:
+    task_root = tmp_path / "task-workspace"
+    pack_root = tmp_path / "pack-workspace"
+    task_workspace = create_workspace(client, root_path=str(task_root))
+    pack_workspace = create_workspace(client, root_path=str(pack_root))
+    task = create_task(client, task_workspace["id"])
+    context_pack = create_context_pack(client, pack_workspace["id"], pack_root)
+
+    response = client.post(
+        f"/api/v1/tasks/{task['id']}/runs",
+        json={"contextPackId": context_pack["id"]},
+    )
+
+    assert response.status_code == 409
+    assert response.headers["content-type"] == "application/problem+json"
+    problem = response.json()
+    assert problem["type"] == "urn:mensura:problem:context-pack-workspace-mismatch"
+    assert task_workspace["id"] in problem["detail"]
+    assert pack_workspace["id"] in problem["detail"]
+
+
+def test_run_creation_requires_a_strict_context_pack_body(client: TestClient) -> None:
+    workspace = create_workspace(client)
+    task = create_task(client, workspace["id"])
+    endpoint = f"/api/v1/tasks/{task['id']}/runs"
+
+    empty_response = client.post(endpoint)
+    legacy_response = client.post(endpoint, json={})
+    invalid_response = client.post(
+        endpoint,
+        json={"contextPackId": "not-a-digest", "paths": ["mutable.py"]},
+    )
+
+    for response in (empty_response, legacy_response, invalid_response):
+        assert response.status_code == 422
+        assert response.headers["content-type"] == "application/problem+json"
+        assert response.json()["type"] == "urn:mensura:problem:validation-error"
+
+    assert legacy_response.json()["errors"][0]["pointer"] == "#/body/contextPackId"
+    assert {error["pointer"] for error in invalid_response.json()["errors"]} == {
+        "#/body/contextPackId",
+        "#/body/paths",
+    }
+
+
+def test_run_creation_checks_task_before_context_pack(client: TestClient) -> None:
+    task_id = uuid4()
+    response = client.post(
+        f"/api/v1/tasks/{task_id}/runs",
+        json={"contextPackId": f"sha256:{'b' * 64}"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["type"] == "urn:mensura:problem:resource-not-found"
+    assert response.json()["detail"] == f"Task '{task_id}' was not found."
 
 
 def test_unknown_task_uses_problem_details(client: TestClient) -> None:

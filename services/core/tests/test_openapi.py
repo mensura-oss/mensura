@@ -33,6 +33,8 @@ def test_openapi_documents_camel_case_and_problem_media_type(client: TestClient)
     vault_preview = schema["components"]["schemas"]["VaultFilePreview"]
     context_pack = schema["components"]["schemas"]["ContextPackManifest"]
     context_pack_create = schema["components"]["schemas"]["CreateContextPackRequest"]
+    run_create = schema["components"]["schemas"]["RunCreate"]
+    run = schema["components"]["schemas"]["Run"]
 
     assert set(workspace_create["properties"]) == {"name", "rootPath"}
     assert "workspaceId" in task["properties"]
@@ -72,6 +74,19 @@ def test_openapi_documents_camel_case_and_problem_media_type(client: TestClient)
         "truncated",
     }
     assert set(context_pack_create["properties"]) == {"paths"}
+    assert set(run_create["properties"]) == {"contextPackId"}
+    assert run_create["required"] == ["contextPackId"]
+    assert set(run["properties"]) == {
+        "id",
+        "taskId",
+        "contextPackId",
+        "contextPack",
+        "status",
+        "startedAt",
+        "finishedAt",
+        "createdAt",
+        "updatedAt",
+    }
     assert set(context_pack["properties"]) == {
         "id",
         "digest",
