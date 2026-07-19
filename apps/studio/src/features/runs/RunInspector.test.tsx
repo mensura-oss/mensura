@@ -90,7 +90,9 @@ describe("RunInspector", () => {
     expect(screen.getByText("No provider warnings.")).toBeVisible();
     expect(screen.getByText("Review the result.")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Execute run" })).toBeNull();
-    expect(executeRun).toHaveBeenCalledWith(queued.id);
+    expect(executeRun).toHaveBeenCalledWith(queued.id, {
+      providerId: "mensura.builtin",
+    });
   });
 
   it("shows RFC 9457 execution errors beside the persisted failed result", async () => {
@@ -123,6 +125,56 @@ describe("RunInspector", () => {
       screen.getByText("The provider adapter could not complete this execution."),
     ).toBeVisible();
     expect(screen.queryByRole("button", { name: "Execute run" })).toBeNull();
+  });
+
+  it("makes a configured real provider explicit before execution", async () => {
+    const user = userEvent.setup();
+    const queued = makeRun("queued");
+    const succeeded = makeOpenAIRun();
+    let latest = queued;
+    const executeRun = vi.fn(() => {
+      latest = succeeded;
+      return Promise.resolve(succeeded);
+    });
+    const client = createTestClient({
+      getRun: () => Promise.resolve(latest),
+      executeRun,
+      listProviders: () =>
+        Promise.resolve({
+          total: 2,
+          items: [
+            {
+              id: "mensura.builtin",
+              name: "Deterministic review",
+              kind: "deterministic",
+              configured: true,
+              model: null,
+              promptVersion: "review.v1",
+            },
+            {
+              id: "openai",
+              name: "OpenAI",
+              kind: "real",
+              configured: true,
+              model: "gpt-5-mini",
+              promptVersion: "review.v1",
+            },
+          ],
+        }),
+    });
+
+    renderWithAppProviders(<RunInspector />, client);
+    await user.type(screen.getByLabelText("Run ID"), queued.id);
+    await user.click(screen.getByRole("button", { name: "Inspect" }));
+    await user.selectOptions(await screen.findByLabelText("Execution provider"), "openai");
+
+    expect(screen.getByText(/Selected: real · review.v1 · gpt-5-mini/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Execute run" }));
+
+    expect(await screen.findByText("openai-responses · v1.0.0")).toBeVisible();
+    expect(screen.getByText("real")).toBeVisible();
+    expect(screen.getByText("review.v1")).toBeVisible();
+    expect(executeRun).toHaveBeenCalledWith(queued.id, { providerId: "openai" });
   });
 });
 
@@ -158,9 +210,11 @@ function makeRun(status: "queued" | "succeeded" | "failed"): Run {
 
   const provider = {
     providerId: "mensura.builtin",
+    providerKind: "deterministic" as const,
     adapterId: "deterministic-review",
     adapterVersion: "1.0.0",
     model: null,
+    promptVersion: "review.v1" as const,
   };
   if (status === "failed") {
     return {
@@ -205,6 +259,25 @@ function makeRun(status: "queued" | "succeeded" | "failed"): Run {
         },
         warnings: [],
         recommendedNextSteps: ["Review the result."],
+      },
+    },
+  };
+}
+
+function makeOpenAIRun(): Run {
+  const deterministic = makeRun("succeeded");
+  if (!deterministic.execution) throw new Error("Expected terminal execution fixture.");
+  return {
+    ...deterministic,
+    execution: {
+      ...deterministic.execution,
+      provider: {
+        providerId: "openai",
+        providerKind: "real",
+        adapterId: "openai-responses",
+        adapterVersion: "1.0.0",
+        model: "gpt-5-mini",
+        promptVersion: "review.v1",
       },
     },
   };

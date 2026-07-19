@@ -1,11 +1,12 @@
 # Mensura Core
 
-Mensura Core is the HTTP boundary for tasks and controlled agent execution. The current service implements the first versioned resource contracts, process-local resource storage, read-only local Git inspection, deterministic Vault file inventory/retrieval, immutable context-pack assembly, a manually triggered Ruff/pytest Guard runner, and a manually triggered deterministic provider adapter with bounded structured results. It does not call an external model, edit repositories, generate embeddings, return patch content, implement a full policy engine, or persist data across restarts.
+Mensura Core is the HTTP boundary for tasks and controlled agent execution. The current service implements versioned resource contracts, process-local resource storage, read-only local Git inspection, deterministic Vault inventory/retrieval, immutable context-pack assembly, a manual Ruff/pytest Guard runner, the credential-free deterministic provider, and one optional OpenAI BYOK adapter with bounded structured results. It does not edit repositories, generate embeddings, return patch content, implement a full policy engine, or persist run resources across restarts.
 
 ## Requirements
 
 - Python 3.12 or newer.
 - Git available on `PATH` for GitPython-backed local inspection.
+- An operating-system credential backend supported by Python `keyring` to configure optional OpenAI BYOK. Deterministic execution does not require it.
 
 ## Local setup
 
@@ -56,6 +57,8 @@ JSON property names use camelCase. Resource identifiers are UUIDs and timestamps
 | `GET` | `/api/v1/runs/{run_id}` | Returns one run |
 | `POST` | `/api/v1/runs/{run_id}/execute` | Manually executes one queued run and returns its terminal record |
 | `POST` | `/api/v1/tasks/{task_id}/runs` | Creates a queued run bound to an immutable context pack |
+| `GET` | `/api/v1/providers` | Lists deterministic/OpenAI availability with redacted local configuration state |
+| `PUT` | `/api/v1/providers/openai/config` | Saves a write-only API key plus non-secret model setting locally |
 
 `POST /api/v1/tasks/{task_id}/runs` requires this strict body:
 
@@ -69,13 +72,29 @@ Core resolves the task first, requires the exact immutable pack to exist, and re
 
 ## Manual run execution
 
-`POST /api/v1/runs/{run_id}/execute` accepts no body, replacement context, prompt, provider selection, or repository path. Core reloads the stored run and task, retrieves the exact bound immutable manifest, and rechecks direct pack identity, task/workspace ownership, inventory/schema identity, and stored aggregate evidence before invoking an adapter.
+`POST /api/v1/runs/{run_id}/execute` requires an explicit provider selection:
+
+```json
+{
+  "providerId": "mensura.builtin"
+}
+```
+
+The other supported value is `openai`, which must be configured first. The request cannot supply replacement context, a prompt, credential, model, or repository path. Core reloads the stored run and task, retrieves the exact bound immutable manifest, and rechecks direct pack identity, task/workspace ownership, inventory/schema identity, and stored aggregate evidence before invoking the selected adapter.
 
 The implemented state machine is exactly `queued -> running -> succeeded | failed`. An atomic expected-status repository update claims a queued run before provider work, so overlapping requests cannot both execute it. `startedAt` is persisted on the running transition; `finishedAt`, bounded duration, and either a validated result or safe failure are persisted on the terminal transition. Any later execute request is a `409` conflict. There is no cancellation or retry transition in this slice.
 
-`ProviderAdapter` isolates immutable adapter identity and a typed execution request/result. The default `DeterministicReviewProvider` is credential-free and receives only the stored Task plus the complete bounded `ContextPackManifest`; it receives no `Workspace`, `rootPath`, Git/filesystem/subprocess/network capability, or write method. It deterministically returns schema-v1 task intent, context aggregates and languages, bounded warnings, and recommended review steps. It does not assemble a vendor prompt, call a model, emit raw logs, or include captured preview bodies in the run result.
+`ProviderRegistry` resolves selection before Core claims the queued run. `ProviderAdapter` then isolates immutable adapter identity and a typed execution request/result. The default `DeterministicReviewProvider` is credential-free and receives only the stored Task plus the complete bounded `ContextPackManifest`; it receives no `Workspace`, `rootPath`, Git/filesystem/subprocess capability, credential, or write method. It deterministically returns schema-v1 task intent, context aggregates and languages, bounded warnings, and recommended review steps.
 
-Provider identity is visible as `providerId`, `adapterId`, `adapterVersion`, and nullable `model`. A succeeded result contains only code-bounded fields. Provider exceptions and invalid structured output persist a failed run with a closed failure code and safe summary before the execute request returns RFC 9457 Problem Details; exception and validation internals are not exposed. The HTTP action is synchronous and runs through FastAPI's worker-thread handling. Background workers, brokers, streaming/SSE, retries, provider credentials/selection, prompt versioning, repository changes, and orchestration remain deferred.
+The optional `OpenAIReviewProvider` calls the Responses API with `store: false`, no tools, input truncation disabled, a 1,200-token output cap, and strict JSON Schema. The code-controlled `review.v1` mapping serializes only the persisted Task and exact immutable manifest, including already bounded captured previews. Core parses and locally validates the compact model payload, then attaches context counts/digests derived from the manifest rather than trusting model claims. It does not read the repository during execution or expose prompts, preview bodies, raw upstream responses, or credentials in the run result.
+
+Provider identity is visible as `providerId`, `providerKind`, `adapterId`, `adapterVersion`, nullable `model`, and `promptVersion`. Provider and validation failures persist a failed run with a closed safe code/summary before returning RFC 9457 Problem Details; exception, upstream body, credential, and schema internals are not exposed. Unsupported or unconfigured selection occurs before claim and leaves the run queued. A selected OpenAI failure never silently changes to deterministic. The HTTP action is synchronous through FastAPI's worker-thread handling. Background workers, brokers, streaming/SSE, retries, additional vendors/prompts, repository changes, and orchestration remain deferred.
+
+## Local BYOK configuration
+
+`PUT /api/v1/providers/openai/config` accepts `{ "apiKey": "...", "model": "..." }`. The key is write-only: Core stores it through Python `keyring` under service `dev.mensura.studio`, account `openai-api-key`, and no GET or response schema contains it. The model is the only provider value written to `providers.json` in the platform user-config directory (`~/Library/Application Support/Mensura` on macOS), with `MENSURA_CONFIG_DIR` available for an explicit local override. This settings file is mode `0600` where supported and contains no secret.
+
+Saving configuration validates local shape but does not spend a model request. Rejected credentials are reported on the first selected execution. OpenAI use requires outbound access to `https://api.openai.com`; deterministic execution remains fully functional without network, config, or credentials.
 
 ## Read-only repository inspection
 
@@ -193,10 +212,15 @@ Run execution additionally uses:
 - `urn:mensura:problem:run-context-pack-missing` (`409`) when the persisted bound pack is no longer retrievable;
 - `urn:mensura:problem:run-context-inconsistent` (`409`) when task, workspace, manifest, or stored binding evidence disagrees;
 - `urn:mensura:problem:provider-execution-failed` (`502`) when an adapter raises during execution;
+- `urn:mensura:problem:unsupported-provider` (`422`);
+- `urn:mensura:problem:provider-configuration-missing` (`409`);
+- `urn:mensura:problem:provider-configuration-unavailable` (`503`);
+- `urn:mensura:problem:provider-credentials-invalid` (`422`);
+- `urn:mensura:problem:provider-upstream-failed` (`502`);
 - `urn:mensura:problem:structured-result-invalid` (`502`) when adapter output fails the bounded schema.
 
 Problem URNs are stable machine identifiers. They can be replaced by resolvable HTTPS documentation only as a versioned compatibility decision.
 
 ## Storage boundary
 
-Resource routers depend on `CoreService`; Guard routes depend on `GuardService`; Vault routes depend on `VaultService`; context-pack routes depend on `ContextPackService`. Services use replaceable storage/config/runner/Git/filesystem/provider protocols. `InMemoryCoreRepository` stores workspaces/tasks/runs and provides atomic expected-state replacement, `InMemoryGuardRunRepository` stores only the latest completed Guard result, `InMemoryVaultInventoryRepository` stores only the latest inventory/items, and `InMemoryContextPackRepository` stores immutable manifests by workspace/digest. Git/filesystem adapters provide read-only live inspection; the provider adapter consumes only persisted task/context objects. All in-memory resources disappear whenever Core stops. External filesystem changes can make inventory/context capture best-effort, but executing a run does not reread the repository and uses only the already captured immutable manifest.
+Resource routers depend on `CoreService`; provider routes use `ProviderRegistry`; Guard, Vault, and context-pack routes retain their dedicated services. Services use replaceable storage/config/credential/runner/Git/filesystem/provider protocols. Workspaces/tasks/runs, Guard results, Vault inventories, and context packs remain in memory. Only the non-secret OpenAI model setting and keyring credential survive Core restarts. Git/filesystem adapters provide read-only live inspection; provider adapters consume only persisted task/context objects. External filesystem changes can make inventory/context capture best-effort, but executing a run does not reread the repository and uses only the already captured immutable manifest.

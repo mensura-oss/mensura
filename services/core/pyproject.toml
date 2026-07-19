@@ -12,6 +12,8 @@ license = { text = "AGPL-3.0-only" }
 dependencies = [
   "fastapi>=0.116,<1",
   "GitPython>=3.1.45,<4",
+  "httpx>=0.28,<1",
+  "keyring>=25.6,<26",
   "pydantic>=2.11,<3",
   "uvicorn>=0.35,<1",
 ]

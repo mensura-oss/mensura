@@ -4,6 +4,7 @@ export * from "./domain.js";
 export * from "./execution.js";
 export * from "./guard.js";
 export * from "./plugin.js";
+export * from "./provider.js";
 export * from "./repository.js";
 export * from "./state-machine.js";
 export * from "./vault.js";

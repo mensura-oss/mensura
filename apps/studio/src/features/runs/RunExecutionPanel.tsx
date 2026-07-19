@@ -1,5 +1,11 @@
-import type { Run, RunExecutionResult } from "@mensura/shared-types";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type {
+  ProviderDescriptor,
+  ProviderId,
+  Run,
+  RunExecutionResult,
+} from "@mensura/shared-types";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useCoreClient } from "../../api/CoreClientProvider";
 import { queryKeys } from "../../app/queryClient";
@@ -8,8 +14,21 @@ import { ProblemDetailsView } from "../../components/ProblemDetailsView";
 export function RunExecutionPanel({ run }: { run: Run }) {
   const client = useCoreClient();
   const queryClient = useQueryClient();
+  const [selectedProviderId, setSelectedProviderId] =
+    useState<ProviderId>("mensura.builtin");
+  const providers = useQuery({
+    queryKey: queryKeys.providers,
+    queryFn: () => client.listProviders(),
+    enabled: run.status === "queued",
+    retry: false,
+  });
+  const availableProviders = providers.data?.items ?? [DETERMINISTIC_PROVIDER];
+  const selectedProvider = availableProviders.find(
+    (provider) => provider.id === selectedProviderId,
+  ) ?? DETERMINISTIC_PROVIDER;
   const execute = useMutation({
-    mutationFn: () => client.executeRun(run.id),
+    mutationFn: () =>
+      client.executeRun(run.id, { providerId: selectedProvider.id }),
     onSuccess: (executedRun) => {
       queryClient.setQueryData(queryKeys.run(executedRun.id), executedRun);
     },
@@ -36,6 +55,10 @@ export function RunExecutionPanel({ run }: { run: Run }) {
             <dd>{run.execution.provider.providerId}</dd>
           </div>
           <div>
+            <dt>Kind</dt>
+            <dd>{run.execution.provider.providerKind}</dd>
+          </div>
+          <div>
             <dt>Adapter</dt>
             <dd>
               {run.execution.provider.adapterId} · v
@@ -54,24 +77,57 @@ export function RunExecutionPanel({ run }: { run: Run }) {
                 : formatDuration(run.execution.durationMs)}
             </dd>
           </div>
+          <div>
+            <dt>Prompt</dt>
+            <dd>{run.execution.provider.promptVersion}</dd>
+          </div>
         </dl>
       ) : null}
 
       {run.status === "queued" ? (
         <div className="run-execution__action">
-          <p>
-            Execute only the persisted task and immutable context pack. This adapter
-            cannot read or write the live repository.
-          </p>
+          <div className="run-provider-selection">
+            <label className="form-field">
+              <span>Execution provider</span>
+              <select
+                value={selectedProvider.id}
+                onChange={(event) => {
+                  setSelectedProviderId(event.target.value as ProviderId);
+                  execute.reset();
+                }}
+                disabled={execute.isPending}
+              >
+                {availableProviders.map((provider) => (
+                  <option
+                    key={provider.id}
+                    value={provider.id}
+                    disabled={!provider.configured}
+                  >
+                    {provider.name}
+                    {provider.configured ? "" : " · configure first"}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p>
+              Selected: {selectedProvider.kind} · {selectedProvider.promptVersion}
+              {selectedProvider.model ? ` · ${selectedProvider.model}` : ""}. Execution
+              uses only the persisted task and immutable context pack.
+            </p>
+          </div>
           <button
             className="button button--secondary"
             type="button"
             onClick={() => execute.mutate()}
-            disabled={execute.isPending}
+            disabled={execute.isPending || !selectedProvider.configured}
           >
             {execute.isPending ? "Execution running…" : "Execute run"}
           </button>
         </div>
+      ) : null}
+
+      {providers.isError && run.status === "queued" ? (
+        <ProblemDetailsView error={providers.error} />
       ) : null}
 
       {execute.isPending ? (
@@ -98,6 +154,15 @@ export function RunExecutionPanel({ run }: { run: Run }) {
     </section>
   );
 }
+
+const DETERMINISTIC_PROVIDER: ProviderDescriptor = {
+  id: "mensura.builtin",
+  name: "Deterministic review",
+  kind: "deterministic",
+  configured: true,
+  model: null,
+  promptVersion: "review.v1",
+};
 
 function ExecutionResult({ result }: { result: RunExecutionResult }) {
   return (
@@ -183,7 +248,8 @@ function formatDuration(durationMs: number) {
 }
 
 function formatFailureCode(code: string) {
-  return code === "structured_result_invalid"
-    ? "Structured result invalid"
-    : "Provider execution failed";
+  if (code === "structured_result_invalid") return "Structured result invalid";
+  if (code === "provider_credentials_invalid") return "Provider credentials invalid";
+  if (code === "provider_upstream_failed") return "Upstream provider failed";
+  return "Provider execution failed";
 }

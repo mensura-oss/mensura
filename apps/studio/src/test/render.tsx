@@ -11,6 +11,8 @@ export function createTestClient(
   return {
     baseUrl: "http://127.0.0.1:8000",
     buildVaultInventory: () => Promise.reject(new Error("Not implemented in test")),
+    configureOpenAIProvider: () =>
+      Promise.reject(new Error("Not implemented in test")),
     createContextPack: () => Promise.reject(new Error("Not implemented in test")),
     createGuardRun: () => Promise.reject(new Error("Not implemented in test")),
     createRun: () => Promise.reject(new Error("Not implemented in test")),
@@ -27,6 +29,27 @@ export function createTestClient(
     getWorkspaceRepository: () =>
       Promise.reject(new Error("Not implemented in test")),
     listContextPacks: () => Promise.reject(new Error("Not implemented in test")),
+    listProviders: () => Promise.resolve({
+      items: [
+        {
+          id: "mensura.builtin",
+          name: "Deterministic review",
+          kind: "deterministic",
+          configured: true,
+          model: null,
+          promptVersion: "review.v1",
+        },
+        {
+          id: "openai",
+          name: "OpenAI",
+          kind: "real",
+          configured: false,
+          model: null,
+          promptVersion: "review.v1",
+        },
+      ],
+      total: 2,
+    }),
     listWorkspaces: () => Promise.reject(new Error("Not implemented in test")),
     listVaultFiles: () => Promise.reject(new Error("Not implemented in test")),
     ...overrides,

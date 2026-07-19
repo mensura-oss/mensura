@@ -10,6 +10,10 @@ import type {
   GuardRunRequest,
   GuardRunResponse,
   ProblemDetails,
+  ProviderCollection,
+  ProviderDescriptor,
+  ConfigureOpenAIProviderRequest,
+  ExecuteRunRequest,
   RepositorySummary,
   Run,
   Task,
@@ -34,7 +38,10 @@ export interface CoreClient {
     input: CreateContextPackRequest,
   ): Promise<CreateContextPackResponse>;
   createRun(taskId: string, input: CreateRunRequest): Promise<Run>;
-  executeRun(runId: string): Promise<Run>;
+  executeRun(runId: string, input: ExecuteRunRequest): Promise<Run>;
+  configureOpenAIProvider(
+    input: ConfigureOpenAIProviderRequest,
+  ): Promise<ProviderDescriptor>;
   createGuardRun(
     workspaceId: string,
     input?: GuardRunRequest,
@@ -59,6 +66,7 @@ export interface CoreClient {
   ): Promise<VaultFileCollection>;
   listContextPacks(workspaceId: string): Promise<ContextPackCollection>;
   listWorkspaces(): Promise<WorkspaceCollection>;
+  listProviders(): Promise<ProviderCollection>;
 }
 
 export class CoreApiError extends Error {
@@ -190,11 +198,22 @@ export function createCoreClient(options?: {
         body: JSON.stringify(input),
       });
     },
-    executeRun(runId) {
+    executeRun(runId, input) {
       return request<Run>(
         `/api/v1/runs/${encodeURIComponent(runId)}/execute`,
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        },
       );
+    },
+    configureOpenAIProvider(input) {
+      return request<ProviderDescriptor>("/api/v1/providers/openai/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
     },
     createWorkspace(input) {
       return request<Workspace>("/api/v1/workspaces", {
@@ -240,6 +259,9 @@ export function createCoreClient(options?: {
     },
     listWorkspaces() {
       return request<WorkspaceCollection>("/api/v1/workspaces");
+    },
+    listProviders() {
+      return request<ProviderCollection>("/api/v1/providers");
     },
     listContextPacks(workspaceId) {
       return request<ContextPackCollection>(

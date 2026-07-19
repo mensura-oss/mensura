@@ -8,6 +8,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SecretStr,
     StringConstraints,
     model_validator,
 )
@@ -28,6 +29,15 @@ ProviderIdentifier = Annotated[
 ]
 ProviderVersion = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)
+]
+ModelIdentifier = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=160,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+    ),
 ]
 LanguageName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
 ContextPackDigest = Annotated[
@@ -85,6 +95,20 @@ class RunStatus(StrEnum):
     FAILED = "failed"
 
 
+class ProviderId(StrEnum):
+    DETERMINISTIC = "mensura.builtin"
+    OPENAI = "openai"
+
+
+class ProviderKind(StrEnum):
+    DETERMINISTIC = "deterministic"
+    REAL = "real"
+
+
+class PromptVersion(StrEnum):
+    REVIEW_V1 = "review.v1"
+
+
 class HealthResponse(ApiModel):
     status: Literal["ok"]
     service: Literal["mensura-core"]
@@ -131,6 +155,29 @@ class RunCreate(ApiModel):
     context_pack_id: ContextPackDigest
 
 
+class RunExecute(ApiModel):
+    provider_id: ProviderIdentifier
+
+
+class OpenAIProviderConfigure(ApiModel):
+    api_key: Annotated[SecretStr, Field(min_length=20, max_length=512)]
+    model: ModelIdentifier
+
+
+class ProviderDescriptor(ResourceModel):
+    id: ProviderId
+    name: Name
+    kind: ProviderKind
+    configured: bool
+    model: ModelIdentifier | None
+    prompt_version: PromptVersion
+
+
+class ProviderCollection(ApiModel):
+    items: list[ProviderDescriptor]
+    total: Annotated[int, Field(ge=0)]
+
+
 class RunContextPackReference(ResourceModel):
     id: ContextPackDigest
     workspace_id: UUID
@@ -142,13 +189,12 @@ class RunContextPackReference(ResourceModel):
 
 
 class RunProviderMetadata(ResourceModel):
-    provider_id: ProviderIdentifier
+    provider_id: ProviderId
+    provider_kind: ProviderKind
     adapter_id: ProviderIdentifier
     adapter_version: ProviderVersion
-    model: (
-        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=160)]
-        | None
-    )
+    model: ModelIdentifier | None
+    prompt_version: PromptVersion
 
 
 class RunExecutionContextSummary(ResourceModel):
@@ -174,6 +220,8 @@ class RunExecutionResult(ResourceModel):
 
 class RunExecutionFailureCode(StrEnum):
     PROVIDER_EXECUTION_FAILED = "provider_execution_failed"
+    PROVIDER_CREDENTIALS_INVALID = "provider_credentials_invalid"
+    PROVIDER_UPSTREAM_FAILED = "provider_upstream_failed"
     STRUCTURED_RESULT_INVALID = "structured_result_invalid"
 
 

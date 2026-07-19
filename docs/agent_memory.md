@@ -5,7 +5,7 @@
 - Mensura is an AGPL-3.0 open-source, local-first and self-hostable agentic development platform for professional developers and teams.
 - It combines a desktop workspace (Studio), orchestration (Core), project memory (Vault), quality and policy gates (Guard), extensions (Hub), and optional voice control (Voice).
 - The product emphasizes reproducible agent runs, visible diffs and logs, human approval, mandatory checks, open MCP interoperability, and user-managed model providers.
-- Current implementation status: the repository has a runnable pnpm workspace, tested shared contracts, a verified minimal Mensura Core FastAPI service, and a verified Tauri/React Studio flow for workspace selection -> Vault inventory -> immutable context pack -> ready task -> context-bound queued run -> manually triggered deterministic provider result, plus read-only repository inspection and manually triggered lint/test Guard results. Durable server persistence, external model providers, repository changes, and orchestration remain unimplemented.
+- Current implementation status: the repository has a runnable pnpm workspace, tested shared contracts, a verified FastAPI Core service, and a Tauri/React Studio flow for workspace selection -> Vault inventory -> immutable context pack -> ready task -> context-bound queued run -> explicit deterministic or optional OpenAI BYOK execution, plus read-only repository inspection and manual lint/test Guard results. OpenAI keys use the OS credential backend, `review.v1` and structured outputs are code-bounded, and deterministic remains credential-free. Durable run/resource persistence, repository changes, additional providers, and orchestration remain unimplemented.
 
 ## Source Documents Read
 
@@ -124,13 +124,14 @@
 
 ## Current Status
 
+- Work cycle 11 is complete in the working tree from clean baseline commit `9c7bba9`: Core/Studio support redacted local OpenAI BYOK configuration, explicit deterministic/real execution selection, OS-keyring secret storage, non-secret user config, `review.v1`, and bounded locally validated structured output without widening repository or tool capabilities.
 - Work cycle 10 is complete in the working tree from clean baseline commit `ac80ea8`: queued runs can be manually executed through an injected deterministic provider using only the persisted task/context pack, with atomic explicit transitions and bounded structured result/failure review in Studio.
 - Work cycle 9 is complete in the working tree from clean baseline commit `9d63e6e`: queued run creation requires an existing immutable context pack owned by the task workspace, persists the exact binding, and Studio shows the selected and stored execution context before any provider execution.
 - Work cycle 8 is complete in the working tree from clean baseline commit `9c258d3`: Core creates deterministic immutable context packs only from an existing Vault inventory, and Studio explicitly selects and reviews their exact bounded evidence without provider execution.
 - Work cycle 7 is complete in the working tree from clean baseline commit `a893268`: Core has deterministic process-local Vault inventory and bounded safe text retrieval, and Studio has a compact active-workspace inventory/preview inspector.
 - Work cycle 6 is complete in the working tree from baseline commit `6552d2d`: Core has a manually triggered, bounded Ruff/pytest Guard runner and Studio has a compact active-workspace result panel.
 - Core v1 now includes tested replaceable read-only Git inspection, Guard execution, Vault inventory, and immutable context-pack adapters in addition to versioned resource routes, predictable RFC 9457 errors, replaceable in-memory storage, and OpenAPI.
-- Git history contained eight commits at this cycle's baseline; it remains too short for meaningful code-hotspot inference.
+- Git history contained 11 commits at this cycle's baseline; it remains too short for meaningful code-hotspot inference.
 - Documentation: ten project specifications, the root README, and this execution journal are tracked.
 - Code at audit time: no applications, services, packages, tests, dependency manifests, CI, or local run scripts existed.
 - Code now: pnpm workspace commands, strict shared TypeScript configuration, and `@mensura/shared-types` with domain contracts, guarded task/run transitions, plugin permissions, and runtime manifest validation.
@@ -139,6 +140,86 @@
 - Repository risk history is too small for meaningful hotspot or bug-magnet analysis; current risk is specification breadth and premature scaffolding.
 
 ## Completed Work Log
+
+### 2026-07-19 — Start work cycle 11: optional BYOK provider execution
+
+- Files changed: `docs/agent_memory.md`.
+- Baseline: confirmed a clean worktree at commit `9c7bba9`, re-read the eleventh-cycle request and the current execution/provider seams, and repeated the all-history recon over 11 commits. The history has no bug-fix magnets or emergency/revert commits; current integration risk is contract drift across shared execution types, Core provider selection/configuration, Tauri-local secret handling, and Studio execution UX.
+- Scope boundary: preserve `DeterministicReviewProvider` as the credential-free default and add exactly one optional real adapter. Real execution consumes only the persisted task, exact immutable context pack, selected local provider settings, and a code-controlled prompt mapping; it receives no repository path, live filesystem/Git/subprocess/tool capability, or write method.
+- Configuration boundary: keep non-secret provider settings explicit and minimal, store the API key in the operating-system credential store behind an injectable adapter, return only redacted configuration state, and never persist a key in repository/workspace files or expose it through read APIs.
+- API boundary: add the smallest versioned provider-configuration/discovery surface and evolve the execute action to accept an explicit provider choice. Unsupported, unconfigured, invalid-configuration/credential, upstream, and structured-output failures remain stable RFC 9457 problems; deterministic execution remains available without configuration.
+- Contract boundary: record the selected provider kind and prompt version in persisted execution metadata, retain the existing bounded result schema, and locally validate real-provider output even when the upstream API enforces structured output.
+- Studio boundary: add a compact provider settings panel, make the provider choice visible before manual execution, keep secrets write-only, and show deterministic-versus-real plus prompt-version metadata on terminal results.
+- Explicitly deferred: additional vendors/models, cloud-owned Mensura credentials, prompt editors, arbitrary endpoints, tool calls, repository reads/writes during execution, retries/cancellation, background workers, streaming/SSE, orchestration, and durable run/resource persistence.
+- Follow-up: define and verify versioned shared provider configuration, selection, and execution metadata contracts before implementing Core credential storage or network behavior.
+
+### 2026-07-19 — Define and verify provider selection contracts
+
+- Files changed: `packages/shared-types/src/{provider,provider.test,execution,execution.test,index}.ts` and `docs/agent_memory.md`.
+- Provider contract: the v1 provider set is deliberately closed to `mensura.builtin` and `openai`. Descriptors expose a human name, `deterministic | real` kind, configured state, nullable model, and prompt version; they never contain credentials. The OpenAI configuration request marks `apiKey` as write-only, and execution accepts one explicit `providerId`.
+- Execution metadata: persisted provider identity now also records `providerKind` and `promptVersion`. The sole prompt version is `review.v1`; both deterministic and real executions therefore remain reviewable against a code-controlled contract.
+- Fallback rule: deterministic is the visible default and always available without configuration. Core will not silently replace a selected OpenAI execution after a configuration or upstream failure, because that would make persisted provider intent misleading.
+- Verification: strict shared TypeScript checking and all 20 tests across seven files pass.
+- Follow-up: implement injectable provider settings and credential stores, an OpenAI Responses adapter with strict local validation, provider discovery/config routes, explicit resolver-based execution, and focused Core tests.
+
+### 2026-07-19 — Prepare Core BYOK configuration and OpenAI adapter
+
+- Files changed: `docs/agent_memory.md`.
+- Storage plan: persist only OpenAI's model identifier in a small user-config JSON file outside the workspace; store the API key under a fixed Mensura service/account in the operating-system credential backend through Python `keyring`. Both boundaries are protocols with in-memory test adapters, and read APIs return only configured/model state.
+- Adapter plan: call the OpenAI Responses API directly with `httpx`, `store: false`, no tools, a bounded output-token limit, and strict JSON Schema output. The adapter will independently parse and validate a smaller vendor payload, then combine it with Core-derived immutable context aggregates into the existing result schema.
+- Prompt plan: `review.v1` is an explicit code mapping that serializes only the stored task and exact immutable manifest, including bounded captured previews; it has no workspace root, live file lookup, Git, shell, tool, or write channel.
+- Selection plan: a provider registry resolves the requested ID before claiming the queued run. Unsupported or unconfigured providers leave the run queued. Once claimed, credential rejection, upstream failure, or invalid structured output ends the run as a bounded failed terminal record and returns a dedicated RFC 9457 problem.
+- Follow-up: implement the Core models/storage/registry/prompt/adapter/service/routes/problems, install the two small runtime dependencies, and pass Ruff plus the full warning-strict Core suite.
+
+### 2026-07-19 — Implement and verify Core optional OpenAI BYOK execution
+
+- Files changed: `services/core/pyproject.toml`, `services/core/src/mensura_core/{models,exceptions,provider_adapter,provider_prompts,provider_config,provider_registry,openai_provider,service,main}.py`, `services/core/src/mensura_core/api/{dependencies,problems,router}.py`, `services/core/src/mensura_core/api/routers/{providers,runs}.py`, `services/core/tests/{test_provider_api,test_run_execution,test_openapi}.py`, and `docs/agent_memory.md`.
+- Provider architecture: `ProviderRegistry` now resolves an explicit execution selection and retains an injectable deterministic adapter. `mensura.builtin` is always configured; `openai` is created only from the saved model plus a retrievable local credential. Resolution happens before the atomic queued-run claim, so unsupported or unconfigured selections leave the run untouched.
+- BYOK storage: `JsonProviderSettingsRepository` stores schema-v1 non-secret model settings in the platform user-config directory (or `MENSURA_CONFIG_DIR`) using an atomic `0600` file. `KeyringCredentialStore` stores the write-only key as service `dev.mensura.studio`, account `openai-api-key`, through the operating-system backend. Tests use in-memory adapters and prove the JSON/read APIs contain no key.
+- Prompt/output boundary: `review.v1` is a frozen instruction/input mapping over only Task plus the exact `ContextPackManifest`. `OpenAIReviewProvider` calls `POST /v1/responses` through an injectable transport with `store: false`, no tools, a 1,200-token maximum, and strict JSON Schema. It locally validates a compact vendor result, then attaches Core-derived immutable context aggregates; it never receives a workspace/root/filesystem/Git/shell/write capability.
+- API: added `GET /api/v1/providers`, `PUT /api/v1/providers/openai/config`, and a required `{ providerId }` body on `POST /api/v1/runs/{run_id}/execute`. Provider reads are redacted. Stable problems cover unsupported provider, missing/unavailable configuration, rejected credentials, upstream failure, generic adapter failure, and invalid structured result.
+- Failure semantics: unsupported/unconfigured selection keeps the run queued. Once OpenAI execution is claimed, rejected credentials, upstream failures, and invalid results persist a failed run with a closed safe failure code/summary before returning RFC 9457 details. Selected OpenAI executions never silently fall back to deterministic.
+- Verification: installed `keyring 25.7.0`; Ruff lint/format pass and all 63 Core tests pass with warnings treated as errors. Tests assert exact provider/prompt metadata, strict/no-tool/no-root payload behavior, local output validation, redaction, deterministic availability, and persisted terminal failures.
+- Follow-up: add typed Studio provider discovery/configuration, a compact write-only settings panel, explicit provider choice in reusable run execution UI, metadata rendering, and focused client/component tests.
+
+### 2026-07-19 — Prepare Studio provider settings and execution selection
+
+- Files changed: `docs/agent_memory.md`.
+- Placement plan: add one compact provider settings card near Core health/workspace controls; it lists both providers, treats OpenAI's key input as write-only, validates model/key presence, preserves values on save failure, clears the key field after success, and refreshes redacted discovery state.
+- Execution plan: reusable `RunExecutionPanel` queries provider descriptors for queued runs, defaults visibly to deterministic, disables unavailable OpenAI, submits the selected `providerId`, and retains the current mutation/refetch behavior for persisted failed outcomes.
+- Result plan: show `deterministic | real` and `promptVersion` alongside provider/adapter/model/duration so the exact execution choice remains obvious in created-run and inspector flows.
+- Test plan: cover Core client paths/bodies/redaction contracts, settings loading/save/error states, deterministic and configured-real selection, unavailable-real prevention, pending behavior, and rendered prompt/provider metadata.
+- Follow-up: implement the typed client/query/component/style changes, update fixtures, and pass strict TypeScript plus the full Studio suite and production build.
+
+### 2026-07-19 — Implement and verify Studio BYOK settings and provider choice
+
+- Files changed: `apps/studio/src/api/{coreClient,coreClient.test}.ts`, `apps/studio/src/app/App.tsx`, `apps/studio/src/app/queryClient.ts`, `apps/studio/src/features/providers/{ProviderSettingsPanel,ProviderSettingsPanel.test}.tsx`, `apps/studio/src/features/runs/{RunExecutionPanel,RunInspector.test}.tsx`, `apps/studio/src/test/render.tsx`, `apps/studio/src/styles.css`, and `docs/agent_memory.md`.
+- Settings UI: added a compact Local BYOK panel that always shows deterministic availability and reads redacted OpenAI state from Core. The form validates model/key presence, uses a password input, preserves both entries when Core returns a problem, clears the key after a successful save, and states that Core stores it in the OS credential backend. No client persistence or read-back path exists for the key.
+- Execution choice: queued-run details fetch provider descriptors, visibly default to deterministic, allow configured OpenAI selection, disable unconfigured choices, and show kind/prompt/model before submission. The mutation sends `{ providerId }`, then retains the existing authoritative query replacement/invalidation behavior for both success and persisted failure.
+- Result metadata: execution review now shows provider ID, `deterministic | real` kind, adapter/version, model, duration, and `promptVersion`, while preserving the immutable context/result separation and bounded failure rendering.
+- Resilience: deterministic remains executable from the code-defined fallback descriptor if provider discovery itself fails; an OpenAI selection never falls back silently. Settings and execution RFC 9457 errors stay scoped to their actions and do not disable the rest of Studio.
+- Verification: strict Studio TypeScript checking and all 50 tests across 14 files pass, including client request bodies, settings redaction/validation/failure preservation/success clearing, deterministic selection, configured real selection, and prompt/provider metadata rendering.
+- Follow-up: update user-facing docs and OpenAPI counts, run the full monorepo/Core/native build matrix, inspect the actual macOS keyring backend without storing a key, and manually validate deterministic end to end. A real OpenAI call requires a user-supplied key and must not be fabricated.
+
+### 2026-07-19 — Prepare cycle 11 acceptance and documentation
+
+- Files changed: `docs/agent_memory.md`.
+- Documentation plan: update root/Core/Studio READMEs with the two provider endpoints, required execute body, OS-keyring/non-secret settings split, `review.v1`, explicit no-silent-fallback rule, and actual current limitations.
+- Acceptance plan: run `pnpm check`, warning-strict Core tests plus Ruff, Studio production/native checks, Rust formatting, diff hygiene, and a dependency/build scan. Then launch Core and Studio against a real Mensura context-bound run and execute deterministic fallback; inspect only the credential backend identity because no `OPENAI_API_KEY` is present in this environment.
+- Security review: scan production provider code and responses for accidental key serialization, repository/root/live-filesystem access, tools, writes, raw upstream errors, unbounded output, and prompt/result metadata omissions.
+- Follow-up: complete docs and acceptance, record exact evidence and remaining real-key verification gap, then commit the coherent cycle if the worktree remains clean apart from this scope.
+
+### 2026-07-19 — Complete work cycle 11: optional OpenAI BYOK execution
+
+- Files changed: `packages/shared-types/src/{provider,provider.test,execution,execution.test,index}.ts`; `services/core/{pyproject.toml,README.md}`; `services/core/src/mensura_core/{models,exceptions,provider_adapter,provider_prompts,provider_config,provider_registry,openai_provider,service,main}.py`; `services/core/src/mensura_core/api/{dependencies,problems,router}.py`; `services/core/src/mensura_core/api/routers/{providers,runs}.py`; `services/core/tests/{test_provider_api,test_run_execution,test_openapi}.py`; `apps/studio/src/api/{coreClient,coreClient.test}.ts`; `apps/studio/src/app/App.tsx`; `apps/studio/src/app/queryClient.ts`; `apps/studio/src/features/providers/{ProviderSettingsPanel,ProviderSettingsPanel.test}.tsx`; `apps/studio/src/features/runs/{RunExecutionPanel,RunInspector.test}.tsx`; `apps/studio/src/{styles.css,test/render.tsx}`; root/Core/Studio READMEs; and `docs/agent_memory.md`.
+- Working end to end: Studio discovers deterministic/OpenAI provider state, accepts a write-only local OpenAI key/model configuration, visibly selects a configured provider for one queued run, and renders persisted kind/model/adapter/`review.v1` metadata plus bounded structured result/failure. Core resolves the selection, retrieves local settings/key, and invokes only the selected adapter against the stored task and exact immutable pack.
+- Storage/security: production uses `keyring.backends.macOS.Keyring` on this machine. The key is stored under Mensura's fixed service/account and absent from config/read schemas; OpenAPI marks `apiKey` as `format: password`, `writeOnly: true`. Only the model is stored in schema-v1 platform user config. No key or config was created during acceptance because this environment has no `OPENAI_API_KEY`.
+- Prompt/provider: the real adapter is OpenAI Responses via direct `httpx`; `review.v1` is code-controlled; requests set `store: false`, omit tools, disable input truncation, cap output at 1,200 tokens, and strict-schema the vendor result before a second local Pydantic validation. The result's immutable context aggregates are always derived by Core. Deterministic remains the default and carries the same prompt-contract identity.
+- Automated verification: `pnpm check` passes 20 shared tests, 50 Studio tests, strict TypeScript, both production builds, and `cargo check`; Ruff lint/format and all 63 Core tests pass with warnings as errors; Rust formatting and diff hygiene pass. The escalated Tauri release build produced both the macOS `.app` and DMG. OpenAPI contains 20 operations across 17 paths.
+- Native acceptance: launched release Studio against live Uvicorn, observed healthy Core plus redacted `OpenAI · not configured` state and empty password field, inspected a real three-file immutable Mensura context-bound queued run, observed deterministic/`review.v1` preflight selection, executed it, and saw succeeded timestamps, `mensura.builtin`, deterministic kind, adapter v1.0.0, no model, prompt `review.v1`, exact context digest/counts/languages, bounded warnings, and two next steps. Final Core GET matched Studio and the server shut down cleanly.
+- Real-provider verification gap: adapter request/response, credential rejection, upstream failure, invalid structured output, and real-provider UI flow are covered with injected transports, but no live paid OpenAI request was made because no user key is available. Mensura remains fully usable through deterministic execution.
+- Intentionally deferred: additional vendors, arbitrary prompt/model catalog UX, credential read-back/export, automatic fallback, retries/cancellation, workers/brokers, streaming/SSE, provider tools, repository writes/change proposals, orchestration, durable resource/run history, auth, and CI/Compose infrastructure.
+- Next recommended vertical slice: introduce one write-isolated change-proposal artifact derived from the immutable run result, expose safe diff metadata for review, then require Guard and explicit approve/reject without granting the provider direct repository-write capability.
 
 ### 2026-07-19 — Start work cycle 10: manual bounded provider execution
 
@@ -812,25 +893,27 @@
 - Task lifecycle rules that require review before approval and support revision/retry paths.
 - Run lifecycle rules that require checking and an approval checkpoint before completion.
 - Runtime plugin manifest validation for supported types and permissions, semantic versions, duplicate permissions, and unsafe entry paths.
-- Automated coverage for shared lifecycle, plugin validation, Guard, Vault, context-pack, and provider-execution wire-contract behavior (18 passing tests).
-- Python 3.12 FastAPI Core service with enabled OpenAPI and eighteen implemented HTTP operations across fifteen paths.
+- Automated coverage for shared lifecycle, plugin validation, Guard, Vault, context-pack, and provider/execution wire-contract behavior (20 passing tests).
+- Python 3.12 FastAPI Core service with enabled OpenAPI and 20 implemented HTTP operations across 17 paths.
 - Workspace creation/listing with exact-root conflict detection in a process-local repository.
 - Task creation/retrieval tied to an existing workspace; created tasks begin in `ready` status.
 - Context-bound run creation/retrieval; every created run requires and stores an immutable same-workspace context pack and starts `queued`.
-- Manually triggered bodyless run execution with an atomic `queued -> running -> succeeded | failed` state machine, persisted transition timestamps, adapter identity, bounded duration, and validated structured result/failure.
-- Replaceable `ProviderAdapter` boundary plus credential-free deterministic implementation that receives only persisted task metadata and the exact immutable context-pack manifest, with no live workspace path, repository/filesystem/Git/subprocess/network capability, or write operation.
+- Manually triggered explicit-provider run execution with an atomic `queued -> running -> succeeded | failed` state machine, persisted transition timestamps, provider/prompt identity, bounded duration, and validated structured result/failure.
+- Replaceable provider registry/adapter boundaries with credential-free deterministic and optional OpenAI Responses implementations; both receive only persisted task data and the exact immutable context-pack manifest, with no live workspace path, repository/filesystem/Git/subprocess/tool capability, or write operation.
+- Local BYOK configuration with write-only API keys in the operating-system credential backend, non-secret model settings in schema-v1 user config, and redacted provider discovery.
 - RFC 9457 `application/problem+json` responses for resource misses, conflicts, request validation, framework HTTP errors, and generic internal failures.
 - CamelCase JSON contracts aligned with TypeScript Workspace/Task ownership and documented in OpenAPI.
-- Fifty-seven passing Core service/runner/API/OpenAPI/Git/Vault/context-pack/run-execution tests plus successful real-Uvicorn repository inspection, Guard execution, inventory, filtering, preview retrieval, immutable pack creation/get/list, bound run creation, and manual structured execution.
+- Sixty-three passing Core service/runner/API/OpenAPI/Git/Vault/context-pack/provider/run-execution tests plus successful real-Uvicorn repository inspection, Guard execution, inventory, filtering, preview retrieval, immutable pack creation/get/list, bound run creation, and manual structured execution.
 - Tauri 2 desktop Studio with React 19, Vite 8, a single resizable window, desktop app icons, CSP, and a local-Core-only native HTTP capability.
 - TanStack Query-backed Core health polling, workspace list/create behavior, task lookup, and run lookup with explicit loading, empty, success, connection-error, and RFC 9457 error states.
 - Shared Health, workspace transport, and Problem Details contracts aligned with Core's camelCase responses and nullable fields.
-- Forty-six passing Studio client/component/acceptance tests and successful native release binary, macOS `.app`, and DMG builds.
+- Fifty passing Studio client/component/acceptance tests and successful native release binary, macOS `.app`, and DMG builds.
 - Verified live desktop connectivity from the release Tauri WebView to Core health and workspace endpoints.
 - Persisted active workspace selection with stale-ID reconciliation after Core restart.
 - Accessible active-workspace task creation with client validation, RFC 9457 failures, value preservation on failure, and immediate ready-task details.
 - Reusable queued-run creation from both created and looked-up tasks, with explicit immutable pack selection, task/run query refresh, and immediate bound-run details.
-- Reusable manual Execute action for created and looked-up queued runs, visible pending/running state, terminal polling, provider identity, compact structured result/failure review, and RFC 9457 plus persisted-failure reconciliation.
+- Reusable manual Execute action for created and looked-up queued runs, visible deterministic/OpenAI selection, pending/running state, terminal polling, provider/prompt identity, compact structured result/failure review, and RFC 9457 plus persisted-failure reconciliation.
+- Compact Local BYOK Studio panel with redacted discovery, accessible model/password validation, value preservation on failure, and key clearing after successful OS-credential save.
 - Verified live Core and native Studio workspace -> Vault inventory -> immutable context pack -> ready task -> context-bound queued run POST/GET sequence.
 - Isolated shared repository summary/diff-metadata contracts with no patch or file-content fields.
 - Replaceable read-only `GitRepositoryAdapter` with a GitPython implementation for branch, detached HEAD, clean/dirty, staged/unstaged/untracked counts, and safe changed-path metadata.
@@ -856,10 +939,9 @@
 
 ### MVP
 
-1. Add one optional real BYOK model provider behind the existing adapter, with explicit local credential/config handling and one small versioned prompt/request mapping, while preserving the same immutable input and bounded no-write result contract.
-2. Extend that observable flow from reviewed context -> write-isolated change proposal/safe diff metadata -> Guard -> review -> approve/reject without bypassing the immutable binding.
-3. Add Docker Compose only for dependencies required by the working flow, plus CI for format, typecheck, tests, and builds.
-4. Replace temporary in-memory adapters with durable storage where acceptance criteria require restart-safe history.
+1. Extend the observable flow from reviewed context -> write-isolated change proposal/safe diff metadata -> Guard -> review -> approve/reject without bypassing the immutable binding.
+2. Add Docker Compose only for dependencies required by the working flow, plus CI for format, typecheck, tests, and builds.
+3. Replace temporary in-memory adapters with durable storage where acceptance criteria require restart-safe history.
 
 ### Post-MVP
 
@@ -983,11 +1065,18 @@
 - Alternatives considered: direct vendor SDK calls inside `CoreService`, client-selected provider/context payloads, arbitrary free-form text output, optimistic terminal state, a Celery/Redis worker, repository rereads, and a fake code-change generator. Rejected or deferred because they couple contracts to one vendor, bypass stored evidence, weaken validation, add infrastructure before observable events exist, or create misleading/unreviewable write behavior.
 - Consequences: the public lifecycle is now exactly `queued -> running -> succeeded | failed`; only queued runs execute; provider identity and bounded result/failure survive GET for the Core process lifetime; provider/result errors return safe `502` problems after persisting failure; synchronous deterministic execution is not a useful coding model and has no retry/cancel/streaming; a future real adapter must preserve the same immutable request and validated result boundary.
 
+### Optional OpenAI BYOK with OS credential isolation
+
+- Decision: retain deterministic as the always-available default, resolve one explicit provider per execution, add OpenAI Responses as the sole optional real adapter, store its key through Python `keyring`, persist only the model in local user config, and pin provider instructions/shape to code-controlled `review.v1`.
+- Reason: BYOK must prove real model variability without turning Mensura into a credential-owning cloud service or weakening the already verified immutable-input/no-write boundary. OS credential storage avoids plaintext repository/workspace secrets, while a small direct HTTP adapter avoids SDK-specific object leakage and keeps the wire behavior auditable.
+- Alternatives considered: environment-variable-only keys, plaintext Tauri/localStorage config, sending credentials with every execute request, auto-fallback after real-provider failure, multiple vendors, arbitrary API endpoints, upstream prompt objects, and provider tools. Rejected or deferred because they impair usability/security, obscure selected-provider audit history, or widen execution beyond this vertical slice.
+- Consequences: Studio can write but never read a key; local keyring availability becomes an optional configuration dependency; OpenAI failures are explicit and never silently change provider; `review.v1`, model, provider kind, and adapter identity persist on the run; real requests use `store: false`, no tools, bounded output and two-stage structured validation; a paid live call still requires the user to supply a key.
+
 ## Open Questions
 
 - Which pagination and authentication contracts should extend the implemented Core v1 resource/error schemas?
 - Should local MVP persistence use SQLite before PostgreSQL, or should Dockerized PostgreSQL be required from the first Core service?
-- Which model provider should power the first non-stub run, and how should BYOK credentials be stored on each platform?
+- Should a second provider be added before durable run history, and what cross-platform credential-backend acceptance matrix is required beyond the verified macOS Keychain path?
 - What exact sandbox guarantees are required for local command execution on macOS, Linux, and Windows?
 - Which project-specific ignore mechanism should extend the fixed Vault rules before team-scale indexing, and when should hashing/durable branch-aware snapshots become necessary?
 - How are plugin signatures rooted and verified, and which permissions are allowed for the first local plugin loader?

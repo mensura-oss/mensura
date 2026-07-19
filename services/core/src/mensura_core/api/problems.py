@@ -20,7 +20,11 @@ from mensura_core.exceptions import (
     GuardRunInProgressError,
     GuardRunNotFoundError,
     NotGitRepositoryError,
+    ProviderConfigurationMissingError,
+    ProviderConfigurationUnavailableError,
+    ProviderCredentialsInvalidError,
     ProviderExecutionFailedError,
+    ProviderUpstreamFailedError,
     RepositoryPathNotFoundError,
     ResourceConflictError,
     ResourceNotFoundError,
@@ -28,6 +32,7 @@ from mensura_core.exceptions import (
     RunContextPackMissingError,
     RunInvalidStateError,
     StructuredResultInvalidError,
+    UnsupportedProviderError,
     UnsupportedRepositoryStateError,
     UnsupportedWorkspaceStateError,
     VaultBinaryPreviewError,
@@ -68,6 +73,11 @@ RUN_INVALID_STATE_TYPE = "urn:mensura:problem:run-invalid-state"
 RUN_CONTEXT_PACK_MISSING_TYPE = "urn:mensura:problem:run-context-pack-missing"
 RUN_CONTEXT_INCONSISTENT_TYPE = "urn:mensura:problem:run-context-inconsistent"
 PROVIDER_EXECUTION_FAILED_TYPE = "urn:mensura:problem:provider-execution-failed"
+UNSUPPORTED_PROVIDER_TYPE = "urn:mensura:problem:unsupported-provider"
+PROVIDER_CONFIGURATION_MISSING_TYPE = "urn:mensura:problem:provider-configuration-missing"
+PROVIDER_CONFIGURATION_UNAVAILABLE_TYPE = "urn:mensura:problem:provider-configuration-unavailable"
+PROVIDER_CREDENTIALS_INVALID_TYPE = "urn:mensura:problem:provider-credentials-invalid"
+PROVIDER_UPSTREAM_FAILED_TYPE = "urn:mensura:problem:provider-upstream-failed"
 STRUCTURED_RESULT_INVALID_TYPE = "urn:mensura:problem:structured-result-invalid"
 
 
@@ -436,6 +446,66 @@ def install_problem_handlers(app: FastAPI) -> None:
             detail=error.detail,
         )
 
+    @app.exception_handler(UnsupportedProviderError)
+    async def unsupported_provider_handler(
+        request: Request, error: UnsupportedProviderError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=422,
+            problem_type=UNSUPPORTED_PROVIDER_TYPE,
+            title="Unsupported provider",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ProviderConfigurationMissingError)
+    async def provider_configuration_missing_handler(
+        request: Request, error: ProviderConfigurationMissingError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=PROVIDER_CONFIGURATION_MISSING_TYPE,
+            title="Provider configuration missing",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ProviderConfigurationUnavailableError)
+    async def provider_configuration_unavailable_handler(
+        request: Request, error: ProviderConfigurationUnavailableError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=503,
+            problem_type=PROVIDER_CONFIGURATION_UNAVAILABLE_TYPE,
+            title="Provider configuration unavailable",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ProviderCredentialsInvalidError)
+    async def provider_credentials_invalid_handler(
+        request: Request, error: ProviderCredentialsInvalidError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=422,
+            problem_type=PROVIDER_CREDENTIALS_INVALID_TYPE,
+            title="Provider credentials invalid",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ProviderUpstreamFailedError)
+    async def provider_upstream_failed_handler(
+        request: Request, error: ProviderUpstreamFailedError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=502,
+            problem_type=PROVIDER_UPSTREAM_FAILED_TYPE,
+            title="Upstream provider failed",
+            detail=error.detail,
+        )
+
     @app.exception_handler(StructuredResultInvalidError)
     async def structured_result_invalid_handler(
         request: Request, error: StructuredResultInvalidError
@@ -516,3 +586,6 @@ UNSUPPORTED_MEDIA_RESPONSE = problem_response(415, "The requested file is not pr
 PAYLOAD_TOO_LARGE_RESPONSE = problem_response(413, "The context-pack selection exceeds a limit.")
 EXECUTION_CONFLICT_RESPONSE = problem_response(409, "The run cannot execute from current state.")
 PROVIDER_EXECUTION_RESPONSE = problem_response(502, "The provider execution did not succeed.")
+PROVIDER_CONFIGURATION_RESPONSE = problem_response(
+    503, "Local provider settings or credential storage is unavailable."
+)

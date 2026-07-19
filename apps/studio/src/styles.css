@@ -205,6 +205,10 @@ code {
   grid-column: 1;
 }
 
+.dashboard-grid__providers {
+  grid-column: 1;
+}
+
 .dashboard-grid__workspaces {
   grid-column: 2;
   grid-row: span 3;
@@ -228,6 +232,49 @@ code {
 
 .dashboard-grid__task-flow {
   grid-column: 1;
+}
+
+.provider-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid #253047;
+  border-radius: 0.5rem;
+  padding: 0.65rem;
+  background: #0d1421;
+}
+
+.provider-status-row > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.provider-status-row strong {
+  color: #dbeafe;
+  font-size: 0.72rem;
+}
+
+.provider-status-row span:not(.badge) {
+  color: #7f8ba3;
+  font-size: 0.62rem;
+}
+
+.provider-config-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  align-items: end;
+  gap: 0.7rem;
+}
+
+.provider-config-form small {
+  color: #7f8ba3;
+  font-size: 0.58rem;
+  line-height: 1.4;
+}
+
+.provider-config-form [aria-invalid="true"] + small {
+  color: #fca5a5;
 }
 
 .panel {
@@ -1568,6 +1615,16 @@ input:focus-visible {
   line-height: 1.5;
 }
 
+.run-provider-selection {
+  display: grid;
+  flex: 1;
+  gap: 0.45rem;
+}
+
+.run-provider-selection .form-field {
+  max-width: 320px;
+}
+
 .run-execution__pending {
   margin: 0;
   border: 1px solid #155e75;
@@ -1581,9 +1638,16 @@ input:focus-visible {
 .run-provider,
 .run-result__context {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.45rem;
   margin: 0;
+}
+
+.run-provider {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.run-result__context {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .run-provider div,
@@ -1749,6 +1813,7 @@ input:focus-visible {
   }
 
   .dashboard-grid__status,
+  .dashboard-grid__providers,
   .dashboard-grid__workspaces,
   .dashboard-grid__repository,
   .dashboard-grid__guard,
@@ -1773,6 +1838,10 @@ input:focus-visible {
   .run-execution__action {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .provider-config-form {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -9,7 +9,9 @@ from mensura_core.context_pack_repositories import ContextPackRepository
 from mensura_core.exceptions import (
     ContextPackNotFoundError,
     ContextPackWorkspaceMismatchError,
+    ProviderCredentialsInvalidError,
     ProviderExecutionFailedError,
+    ProviderUpstreamFailedError,
     ResourceConflictError,
     ResourceNotFoundError,
     RunContextInconsistentError,
@@ -22,6 +24,7 @@ from mensura_core.models import (
     Run,
     RunContextPackReference,
     RunCreate,
+    RunExecute,
     RunExecution,
     RunExecutionFailure,
     RunExecutionFailureCode,
@@ -35,7 +38,13 @@ from mensura_core.models import (
     WorkspaceCreate,
     ensure_utc_timestamp,
 )
-from mensura_core.provider_adapter import ProviderAdapter, ProviderExecutionRequest
+from mensura_core.provider_adapter import (
+    ProviderCredentialsRejectedError,
+    ProviderExecutionRequest,
+    ProviderStructuredOutputError,
+    ProviderUpstreamError,
+)
+from mensura_core.provider_registry import ProviderRegistry
 from mensura_core.repositories import CoreRepository, DuplicateWorkspaceRootError
 from mensura_core.repository_models import RepositorySummary
 
@@ -55,7 +64,7 @@ class CoreService:
         repository: CoreRepository,
         git_repository: GitRepositoryAdapter,
         context_pack_repository: ContextPackRepository,
-        provider: ProviderAdapter,
+        providers: ProviderRegistry,
         *,
         id_factory: IdFactory = uuid4,
         clock: Clock = utc_now,
@@ -63,7 +72,7 @@ class CoreService:
         self._repository = repository
         self._git_repository = git_repository
         self._context_pack_repository = context_pack_repository
-        self._provider = provider
+        self._providers = providers
         self._id_factory = id_factory
         self._clock = clock
 
@@ -158,10 +167,12 @@ class CoreService:
             raise ResourceNotFoundError("Run", run_id)
         return run
 
-    def execute_run(self, run_id: UUID) -> Run:
+    def execute_run(self, run_id: UUID, payload: RunExecute) -> Run:
         run = self.get_run(run_id)
         if run.status is not RunStatus.QUEUED:
             raise RunInvalidStateError(run.id, run.status)
+
+        provider = self._providers.resolve(payload.provider_id)
 
         task = self.get_task(run.task_id)
         self._validate_stored_binding(run, task)
@@ -176,7 +187,7 @@ class CoreService:
             {
                 **run.model_dump(by_alias=False),
                 "status": RunStatus.RUNNING,
-                "execution": RunExecution(provider=self._provider.identity),
+                "execution": RunExecution(provider=provider.identity),
                 "started_at": started_at,
                 "updated_at": started_at,
             }
@@ -187,7 +198,28 @@ class CoreService:
 
         request = ProviderExecutionRequest(task=task, context_pack=context_pack)
         try:
-            raw_result = self._provider.execute(request)
+            raw_result = provider.execute(request)
+        except ProviderCredentialsRejectedError as error:
+            self._finish_failed_run(
+                running,
+                RunExecutionFailureCode.PROVIDER_CREDENTIALS_INVALID,
+                "The configured provider credentials were rejected.",
+            )
+            raise ProviderCredentialsInvalidError(run.id) from error
+        except ProviderUpstreamError as error:
+            self._finish_failed_run(
+                running,
+                RunExecutionFailureCode.PROVIDER_UPSTREAM_FAILED,
+                "The upstream provider could not complete this execution.",
+            )
+            raise ProviderUpstreamFailedError(run.id) from error
+        except ProviderStructuredOutputError as error:
+            self._finish_failed_run(
+                running,
+                RunExecutionFailureCode.STRUCTURED_RESULT_INVALID,
+                "The provider returned output that did not satisfy the execution schema.",
+            )
+            raise StructuredResultInvalidError(run.id) from error
         except Exception as error:
             self._finish_failed_run(
                 running,

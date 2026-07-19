@@ -18,6 +18,13 @@ from mensura_core.provider_adapter import (
     DeterministicReviewProvider,
     ProviderAdapter,
 )
+from mensura_core.provider_config import (
+    CredentialStore,
+    JsonProviderSettingsRepository,
+    KeyringCredentialStore,
+    ProviderSettingsRepository,
+)
+from mensura_core.provider_registry import ProviderRegistry, TransportFactory
 from mensura_core.repositories import CoreRepository, InMemoryCoreRepository
 from mensura_core.service import CoreService
 from mensura_core.vault_inventory import LocalVaultInventoryBuilder, VaultInventoryBuilder
@@ -38,6 +45,10 @@ def create_app(
     vault_inventory_repository: VaultInventoryRepository | None = None,
     context_pack_repository: ContextPackRepository | None = None,
     provider: ProviderAdapter | None = None,
+    provider_registry: ProviderRegistry | None = None,
+    provider_settings_repository: ProviderSettingsRepository | None = None,
+    credential_store: CredentialStore | None = None,
+    openai_transport_factory: TransportFactory | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Mensura Core API",
@@ -48,11 +59,22 @@ def create_app(
     )
     core_repository = repository or InMemoryCoreRepository()
     immutable_context_pack_repository = context_pack_repository or InMemoryContextPackRepository()
+    providers = provider_registry or ProviderRegistry(
+        provider_settings_repository or JsonProviderSettingsRepository(),
+        credential_store or KeyringCredentialStore(),
+        deterministic=provider or DeterministicReviewProvider(),
+        **(
+            {"openai_transport_factory": openai_transport_factory}
+            if openai_transport_factory is not None
+            else {}
+        ),
+    )
+    app.state.provider_registry = providers
     app.state.core_service = CoreService(
         core_repository,
         git_repository or GitPythonRepositoryAdapter(),
         immutable_context_pack_repository,
-        provider or DeterministicReviewProvider(),
+        providers,
     )
     app.state.guard_service = GuardService(
         core_repository,

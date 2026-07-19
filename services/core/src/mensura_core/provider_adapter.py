@@ -2,6 +2,9 @@ from typing import Protocol
 
 from mensura_core.context_pack_models import ContextPackManifest
 from mensura_core.models import (
+    PromptVersion,
+    ProviderId,
+    ProviderKind,
     ResourceModel,
     RunExecutionContextSummary,
     RunExecutionResult,
@@ -28,14 +31,28 @@ class ProviderAdapterExecutionError(Exception):
     """Expected adapter failure whose internal details must not cross the API."""
 
 
+class ProviderCredentialsRejectedError(ProviderAdapterExecutionError):
+    """The upstream provider rejected the locally configured credential."""
+
+
+class ProviderUpstreamError(ProviderAdapterExecutionError):
+    """The upstream provider failed or returned an unusable transport response."""
+
+
+class ProviderStructuredOutputError(ProviderAdapterExecutionError):
+    """The upstream payload did not satisfy the locally enforced result contract."""
+
+
 class DeterministicReviewProvider:
     """Credential-free metadata review adapter for the first execution boundary."""
 
     _identity = RunProviderMetadata(
-        provider_id="mensura.builtin",
+        provider_id=ProviderId.DETERMINISTIC,
+        provider_kind=ProviderKind.DETERMINISTIC,
         adapter_id="deterministic-review",
         adapter_version="1.0.0",
         model=None,
+        prompt_version=PromptVersion.REVIEW_V1,
     )
 
     @property
@@ -62,26 +79,31 @@ class DeterministicReviewProvider:
                 f"{summary.truncated_text_file_count} text preview(s) are intentionally truncated."
             )
 
-        languages = tuple(
-            sorted({entry.language for entry in manifest.files if entry.language is not None})
-        )
         return RunExecutionResult(
             task_summary=task_summary,
             interpreted_intent=task.description or task.title,
-            context=RunExecutionContextSummary(
-                context_pack_id=manifest.id,
-                inventory_id=manifest.inventory_id,
-                file_count=summary.file_count,
-                text_file_count=summary.text_file_count,
-                binary_file_count=summary.binary_file_count,
-                total_file_bytes=summary.total_file_bytes,
-                total_preview_bytes=summary.total_preview_bytes,
-                truncated_text_file_count=summary.truncated_text_file_count,
-                languages=languages,
-            ),
+            context=execution_context_summary(manifest),
             warnings=tuple(warnings),
             recommended_next_steps=(
                 "Review this bounded result against the immutable context before continuing.",
                 "Use a separate write-isolated adapter for any future change proposal.",
             ),
         )
+
+
+def execution_context_summary(manifest: ContextPackManifest) -> RunExecutionContextSummary:
+    summary = manifest.summary
+    languages = tuple(
+        sorted({entry.language for entry in manifest.files if entry.language is not None})
+    )
+    return RunExecutionContextSummary(
+        context_pack_id=manifest.id,
+        inventory_id=manifest.inventory_id,
+        file_count=summary.file_count,
+        text_file_count=summary.text_file_count,
+        binary_file_count=summary.binary_file_count,
+        total_file_bytes=summary.total_file_bytes,
+        total_preview_bytes=summary.total_preview_bytes,
+        truncated_text_file_count=summary.truncated_text_file_count,
+        languages=languages,
+    )

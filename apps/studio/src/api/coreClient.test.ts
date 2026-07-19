@@ -135,7 +135,7 @@ describe("Core client", () => {
     );
   });
 
-  it("manually executes an encoded run ID without a request body", async () => {
+  it("manually executes an encoded run ID with explicit provider selection", async () => {
     const run = {
       id: "run/id",
       status: "succeeded" as const,
@@ -143,10 +143,56 @@ describe("Core client", () => {
     const fetcher = vi.fn(() => Promise.resolve(Response.json(run)));
     const client = createCoreClient({ baseUrl: "http://core.test", fetcher });
 
-    await expect(client.executeRun(run.id)).resolves.toEqual(run);
+    await expect(
+      client.executeRun(run.id, { providerId: "openai" }),
+    ).resolves.toEqual(run);
     expect(fetcher).toHaveBeenCalledWith(
       "http://core.test/api/v1/runs/run%2Fid/execute",
-      { method: "POST" },
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerId: "openai" }),
+      },
+    );
+  });
+
+  it("lists providers and saves write-only OpenAI configuration", async () => {
+    const fetcher = vi.fn(() =>
+      Promise.resolve(
+        Response.json({
+          id: "openai",
+          name: "OpenAI",
+          kind: "real",
+          configured: true,
+          model: "gpt-5-mini",
+          promptVersion: "review.v1",
+        }),
+      ),
+    );
+    const client = createCoreClient({ baseUrl: "http://core.test", fetcher });
+
+    await client.listProviders();
+    expect(fetcher).toHaveBeenNthCalledWith(
+      1,
+      "http://core.test/api/v1/providers",
+      undefined,
+    );
+
+    await client.configureOpenAIProvider({
+      apiKey: "sk-local-write-only",
+      model: "gpt-5-mini",
+    });
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      "http://core.test/api/v1/providers/openai/config",
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          apiKey: "sk-local-write-only",
+          model: "gpt-5-mini",
+        }),
+      },
     );
   });
 

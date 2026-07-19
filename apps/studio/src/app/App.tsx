@@ -4,6 +4,7 @@ import { HealthPanel } from "../features/health/HealthPanel";
 import { GuardPanel } from "../features/guard/GuardPanel";
 import { RunInspector } from "../features/runs/RunInspector";
 import { RepositorySummaryPanel } from "../features/repository/RepositorySummaryPanel";
+import { ProviderSettingsPanel } from "../features/providers/ProviderSettingsPanel";
 import { TaskInspector } from "../features/tasks/TaskInspector";
 import { TaskCreationPanel } from "../features/tasks/TaskCreationPanel";
 import { VaultPanel } from "../features/vault/VaultPanel";
@@ -20,6 +21,9 @@ export function App() {
       <div className="dashboard-grid">
         <div className="dashboard-grid__status">
           <HealthPanel />
+        </div>
+        <div className="dashboard-grid__providers">
+          <ProviderSettingsPanel />
         </div>
         <div className="dashboard-grid__workspaces">
           <WorkspacesPanel

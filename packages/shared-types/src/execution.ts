@@ -1,13 +1,16 @@
 import type { ContextPackDigest } from "./context-pack.js";
 import type { EntityId } from "./domain.js";
+import type { PromptVersion, ProviderKind } from "./provider.js";
 
 export const RUN_EXECUTION_SCHEMA_VERSION = "1" as const;
 
 export interface RunProviderMetadata {
   providerId: string;
+  providerKind: ProviderKind;
   adapterId: string;
   adapterVersion: string;
   model: string | null;
+  promptVersion: PromptVersion;
 }
 
 export interface RunExecutionContextSummary {

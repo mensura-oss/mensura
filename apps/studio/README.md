@@ -1,6 +1,6 @@
 # Mensura Studio
 
-Mensura Studio is the Tauri 2 desktop client for the local Mensura Core service. The current vertical slice supports selecting a workspace, inspecting its local Git state, building and browsing a deterministic Vault file inventory, selecting exact files into an immutable context pack, manually running configured Guard checks, creating a task, recording a context-bound queued run, and manually executing it through Core's bounded deterministic provider adapter. External models, repository changes, and orchestration remain explicitly out of scope.
+Mensura Studio is the Tauri 2 desktop client for the local Mensura Core service. The current vertical slice supports selecting a workspace, inspecting local Git state, building and browsing a deterministic Vault inventory, selecting exact files into an immutable context pack, running configured Guard checks, creating a task and context-bound queued run, then manually executing through Core's deterministic provider or one optional locally configured OpenAI BYOK adapter. Repository changes and orchestration remain explicitly out of scope.
 
 ## Requirements
 
@@ -48,6 +48,7 @@ pnpm studio:build
 
 - Static developer-tool shell with sidebar, top bar, and content grid
 - Core liveness polling and manual refresh
+- Compact provider settings: deterministic availability plus write-only OpenAI key/model configuration and redacted status
 - Workspace list, create form, selectable active workspace, and restored local selection
 - Compact read-only repository summary for the active workspace: branch/detached state, clean/dirty badge, staged/unstaged/untracked counts, and up to eight changed-path metadata entries
 - Manual Vault inventory build/refresh with included/excluded/text/binary counts, compact language summary, up to 200 deterministic file metadata entries, and a 16 KiB UTF-8 text preview inspector
@@ -56,7 +57,7 @@ pnpm studio:build
 - Task creation for the active workspace plus task lookup by UUID
 - Context-pack selection and preflight summary before queued run creation from created or looked-up tasks
 - Run lookup/details showing the persisted immutable pack id, ownership/inventory identities, schema, file count, and byte summary
-- Manual queued-run execution with visible running state, terminal status/timestamps, provider/adapter/model identity, bounded structured result, and persisted structured failure
+- Explicit deterministic/configured-OpenAI selection before manual execution, with visible running state, terminal status/timestamps, provider kind/adapter/model/`review.v1` identity, bounded structured result, and persisted structured failure
 - RFC 9457 Problem Details and connection errors shown without losing server fields
 
 The repository panel is independent from the rest of the shell. A missing path, non-Git root, or unsupported repository state is shown as RFC 9457 Problem Details without disabling workspace/task/run actions. It never renders patches or file contents and exposes no Git mutation controls.
@@ -69,10 +70,12 @@ The context-pack panel uses that latest inventory but has its own candidate quer
 
 Every task run action loads immutable packs using the task's own workspace id. The user must explicitly select one; Studio shows its full digest and compact file/byte evidence before enabling `Start run`. Core revalidates ownership and persists the binding. Created and looked-up run details make that exact immutable execution context visible; selection is preserved if creation returns Problem Details.
 
-Queued run details expose a separate `Execute run` action. While the synchronous request is pending, Studio visibly shows running state and disables the action. Core remains authoritative: success replaces/refetches the run immediately, and failure also refetches because a terminal failed record may have been persisted before an RFC 9457 response. Runs observed in `running` state poll once per second until terminal. Succeeded and failed runs never show the action again.
+Queued run details expose a provider selector and separate `Execute run` action. Deterministic is the visible default and remains usable without provider discovery; OpenAI is disabled until Core reports it configured. The selected provider kind, prompt version, and model are visible before execution. While the synchronous request is pending, Studio shows running state and disables the action. Core remains authoritative: success replaces/refetches immediately, and failure also refetches because a terminal failed record may have been persisted before an RFC 9457 response. Runs observed in `running` poll once per second until terminal. Terminal runs never show the action again.
 
-Execution review keeps input and output distinct. The immutable pack binding stays in the base run details; the execution section shows provider/adapter/version/model identity, duration, bounded task summary and interpreted intent, context aggregates/languages, warnings, recommended next steps, or the persisted safe failure. Studio does not render prompts, context preview bodies, raw provider logs, patches, or repository contents.
+Execution review keeps input and output distinct. The immutable pack binding stays in base run details; execution shows provider/kind/adapter/version/model/prompt identity, duration, bounded task summary and interpreted intent, context aggregates/languages, warnings, recommended next steps, or the persisted safe failure. Studio does not render prompts, context preview bodies, raw provider responses/logs, credentials, patches, or repository contents.
+
+The Local BYOK panel sends a key only on explicit save. Core stores it in the OS credential backend and never returns it; Studio does not put it in localStorage or a config file, preserves it in the form only when save fails, and clears the field after success. The non-secret model ID is shown after redacted provider discovery. Saving does not validate the credential with a paid call; a rejected key is surfaced on selected execution. OpenAI network/model use is optional, and a failed real execution never silently switches providers.
 
 The active workspace ID persists in localStorage, but Core data remains in memory. Restarting Core removes its workspaces/tasks/runs, and Studio clears a restored workspace selection when that ID no longer exists. Repository status is inspected live from the workspace `rootPath`; for this MVP the path itself must be a committed, non-bare Git worktree root.
 
-The app does not start Core itself. Execution is manual, process-local, synchronous, and deterministic; it does not call an external model or permit a repository write. Configurable providers/credentials, prompt assembly/versioning, retry/cancellation, a worker/broker, streaming/SSE, orchestration, code proposals, Monaco, terminals, full repository tree/navigation, file editing, content/semantic search, embeddings, full diff or patch viewing, Git writes, task/run lists, Kanban, durable Vault/context-pack/run history or watchers, the full Guard policy engine/history/config editor, Hub, plugins, authentication, and settings are intentionally deferred.
+The app does not start Core itself. Execution is manual, synchronous, bounded, and repository-read/write isolated; OpenAI is the only optional real adapter and deterministic remains first-class. Additional vendors/models UX, arbitrary prompt editing, credential read-back, retry/cancellation, a worker/broker, streaming/SSE, orchestration, code proposals, Monaco, terminals, full repository tree/navigation, file editing, semantic search/embeddings, full diff or patch viewing, Git writes, task/run lists, Kanban, durable Vault/context-pack/run history or watchers, the full Guard policy engine/history/config editor, Hub, plugins, and authentication are intentionally deferred.

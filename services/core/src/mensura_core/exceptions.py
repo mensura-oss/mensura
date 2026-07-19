@@ -177,9 +177,34 @@ class RunContextInconsistentError(RunExecutionError):
         )
 
 
+class UnsupportedProviderError(RunExecutionError):
+    def __init__(self, provider_id: str) -> None:
+        super().__init__(f"Provider '{provider_id}' is not supported by this Core version.")
+
+
+class ProviderConfigurationMissingError(RunExecutionError):
+    def __init__(self, provider_id: str) -> None:
+        super().__init__(f"Provider '{provider_id}' is not configured on this device.")
+
+
+class ProviderConfigurationUnavailableError(RunExecutionError):
+    def __init__(self) -> None:
+        super().__init__("Local provider configuration or credential storage is unavailable.")
+
+
 class ProviderExecutionFailedError(RunExecutionError):
     def __init__(self, run_id: UUID) -> None:
         super().__init__(f"Provider execution failed for run '{run_id}'.")
+
+
+class ProviderCredentialsInvalidError(RunExecutionError):
+    def __init__(self, run_id: UUID) -> None:
+        super().__init__(f"The configured provider credentials were rejected for run '{run_id}'.")
+
+
+class ProviderUpstreamFailedError(RunExecutionError):
+    def __init__(self, run_id: UUID) -> None:
+        super().__init__(f"The upstream provider could not complete run '{run_id}'.")
 
 
 class StructuredResultInvalidError(RunExecutionError):

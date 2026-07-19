@@ -15,9 +15,11 @@ describe("run execution v1 contracts", () => {
     const execution: RunExecution = {
       provider: {
         providerId: "mensura.builtin",
+        providerKind: "deterministic",
         adapterId: "deterministic-review",
         adapterVersion: "1.0.0",
         model: null,
+        promptVersion: "review.v1",
       },
       durationMs: 4,
       result: {
