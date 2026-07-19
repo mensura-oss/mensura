@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "timeoutSeconds": 120,
+  "checks": {
+    "lint": {
+      "command": [
+        "services/core/.venv/bin/python",
+        "-m",
+        "ruff",
+        "check",
+        "--output-format",
+        "json",
+        "services/core/src",
+        "services/core/tests"
+      ],
+      "blocking": true
+    },
+    "test": {
+      "command": [
+        "services/core/.venv/bin/python",
+        "-m",
+        "pytest",
+        "services/core/tests",
+        "-q",
+        "-W",
+        "error"
+      ],
+      "blocking": true
+    }
+  }
+}

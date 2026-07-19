@@ -214,6 +214,10 @@ code {
   grid-column: 1;
 }
 
+.dashboard-grid__guard {
+  grid-column: 2;
+}
+
 .dashboard-grid__task-flow {
   grid-column: 1;
 }
@@ -705,6 +709,152 @@ input:focus-visible {
   background: rgb(113 63 18 / 38%);
 }
 
+.badge--error {
+  border-color: #9f1239;
+  color: #fda4af;
+  background: rgb(136 19 55 / 38%);
+}
+
+.guard-running {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid #155e75;
+  border-radius: 0.5rem;
+  padding: 0.7rem;
+  color: #a5f3fc;
+  background: #0e2935;
+  font-size: 0.72rem;
+}
+
+.guard-result,
+.guard-checks {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.guard-result__heading,
+.guard-check__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.guard-result__heading > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.guard-result__heading > div span {
+  color: #6f7e96;
+  font-size: 0.62rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.guard-result__heading strong {
+  font-size: 0.92rem;
+}
+
+.guard-counts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.guard-counts div {
+  border: 1px solid #253047;
+  border-radius: 0.45rem;
+  padding: 0.55rem;
+  background: #111827;
+}
+
+.guard-counts dt {
+  color: #6f7e96;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+}
+
+.guard-counts dd {
+  margin: 0.25rem 0 0;
+  color: #e2e8f0;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.guard-check {
+  display: grid;
+  gap: 0.55rem;
+  border: 1px solid #253047;
+  border-radius: 0.55rem;
+  padding: 0.7rem;
+  background: #111827;
+}
+
+.guard-check__heading strong {
+  font-size: 0.78rem;
+}
+
+.guard-check p {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 0.72rem;
+}
+
+.guard-check__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.7rem;
+  color: #7f8ba3;
+  font-size: 0.63rem;
+}
+
+.guard-check__command {
+  overflow: hidden;
+  color: #8fa1b8;
+  font-size: 0.62rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.guard-output {
+  border-top: 1px solid #253047;
+  padding-top: 0.5rem;
+  color: #94a3b8;
+  font-size: 0.67rem;
+}
+
+.guard-output summary {
+  cursor: pointer;
+}
+
+.guard-output div {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+}
+
+.guard-output div > span {
+  color: #6f7e96;
+  font-size: 0.58rem;
+  text-transform: uppercase;
+}
+
+.guard-output pre {
+  max-height: 12rem;
+  margin: 0;
+  overflow: auto;
+  border-radius: 0.4rem;
+  padding: 0.55rem;
+  color: #cbd5e1;
+  background: #0b111d;
+  font: 0.62rem/1.45 "SFMono-Regular", Consolas, monospace;
+  white-space: pre-wrap;
+}
+
 .repository-summary,
 .repository-changes {
   display: grid;
@@ -865,6 +1015,7 @@ input:focus-visible {
   .dashboard-grid__status,
   .dashboard-grid__workspaces,
   .dashboard-grid__repository,
+  .dashboard-grid__guard,
   .dashboard-grid__task-flow {
     grid-column: auto;
     grid-row: auto;

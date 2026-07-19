@@ -9,11 +9,17 @@ from pydantic import BaseModel, ConfigDict
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from mensura_core.exceptions import (
+    GuardConfigurationInvalidError,
+    GuardConfigurationNotFoundError,
+    GuardExecutionError,
+    GuardRunInProgressError,
+    GuardRunNotFoundError,
     NotGitRepositoryError,
     RepositoryPathNotFoundError,
     ResourceConflictError,
     ResourceNotFoundError,
     UnsupportedRepositoryStateError,
+    UnsupportedWorkspaceStateError,
 )
 
 logger = logging.getLogger(__name__)
@@ -25,6 +31,12 @@ VALIDATION_TYPE = "urn:mensura:problem:validation-error"
 REPOSITORY_PATH_NOT_FOUND_TYPE = "urn:mensura:problem:repository-path-not-found"
 NOT_GIT_REPOSITORY_TYPE = "urn:mensura:problem:not-a-git-repository"
 UNSUPPORTED_REPOSITORY_STATE_TYPE = "urn:mensura:problem:unsupported-repository-state"
+GUARD_CONFIGURATION_NOT_FOUND_TYPE = "urn:mensura:problem:guard-configuration-not-found"
+INVALID_GUARD_CONFIGURATION_TYPE = "urn:mensura:problem:invalid-guard-configuration"
+UNSUPPORTED_WORKSPACE_STATE_TYPE = "urn:mensura:problem:unsupported-workspace-state"
+GUARD_EXECUTION_FAILED_TYPE = "urn:mensura:problem:guard-execution-failed"
+GUARD_RUN_IN_PROGRESS_TYPE = "urn:mensura:problem:guard-run-in-progress"
+GUARD_RUN_NOT_FOUND_TYPE = "urn:mensura:problem:guard-run-not-found"
 
 
 class InvalidParameter(BaseModel):
@@ -142,6 +154,76 @@ def install_problem_handlers(app: FastAPI) -> None:
             detail=error.detail,
         )
 
+    @app.exception_handler(GuardConfigurationNotFoundError)
+    async def guard_configuration_not_found_handler(
+        request: Request, error: GuardConfigurationNotFoundError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=404,
+            problem_type=GUARD_CONFIGURATION_NOT_FOUND_TYPE,
+            title="Guard configuration not found",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(GuardConfigurationInvalidError)
+    async def invalid_guard_configuration_handler(
+        request: Request, error: GuardConfigurationInvalidError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=422,
+            problem_type=INVALID_GUARD_CONFIGURATION_TYPE,
+            title="Invalid Guard configuration",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(UnsupportedWorkspaceStateError)
+    async def unsupported_workspace_state_handler(
+        request: Request, error: UnsupportedWorkspaceStateError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=UNSUPPORTED_WORKSPACE_STATE_TYPE,
+            title="Unsupported workspace state",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(GuardRunInProgressError)
+    async def guard_run_in_progress_handler(
+        request: Request, error: GuardRunInProgressError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=GUARD_RUN_IN_PROGRESS_TYPE,
+            title="Guard run already in progress",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(GuardRunNotFoundError)
+    async def guard_run_not_found_handler(
+        request: Request, error: GuardRunNotFoundError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=404,
+            problem_type=GUARD_RUN_NOT_FOUND_TYPE,
+            title="Guard run not found",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(GuardExecutionError)
+    async def guard_execution_handler(request: Request, error: GuardExecutionError) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=500,
+            problem_type=GUARD_EXECUTION_FAILED_TYPE,
+            title="Guard execution failed",
+            detail=error.detail,
+        )
+
     @app.exception_handler(RequestValidationError)
     async def request_validation_handler(
         request: Request, error: RequestValidationError
@@ -204,3 +286,4 @@ NOT_FOUND_RESPONSE = problem_response(404, "The requested resource does not exis
 CONFLICT_RESPONSE = problem_response(409, "The resource conflicts with existing state.")
 VALIDATION_RESPONSE = problem_response(422, "The request does not satisfy the v1 contract.")
 REPOSITORY_INVALID_RESPONSE = problem_response(422, "The workspace root is not a Git repository.")
+GUARD_EXECUTION_RESPONSE = problem_response(500, "A configured Guard command could not start.")

@@ -37,3 +37,38 @@ class NotGitRepositoryError(RepositoryInspectionError):
 class UnsupportedRepositoryStateError(RepositoryInspectionError):
     def __init__(self, path: str, reason: str) -> None:
         super().__init__(f"Repository at '{path}' cannot be inspected. {reason}")
+
+
+class GuardError(CoreError):
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)
+
+
+class GuardConfigurationNotFoundError(GuardError):
+    def __init__(self, path: str) -> None:
+        super().__init__(f"Guard configuration '{path}' was not found.")
+
+
+class GuardConfigurationInvalidError(GuardError):
+    def __init__(self, path: str, reason: str) -> None:
+        super().__init__(f"Guard configuration '{path}' is invalid. {reason}")
+
+
+class UnsupportedWorkspaceStateError(GuardError):
+    pass
+
+
+class GuardExecutionError(GuardError):
+    def __init__(self, check_kind: str) -> None:
+        super().__init__(f"Guard could not start the configured {check_kind} command.")
+
+
+class GuardRunInProgressError(GuardError):
+    def __init__(self, workspace_id: UUID) -> None:
+        super().__init__(f"A Guard run for workspace '{workspace_id}' is already in progress.")
+
+
+class GuardRunNotFoundError(GuardError):
+    def __init__(self, workspace_id: UUID) -> None:
+        super().__init__(f"No completed Guard run exists for workspace '{workspace_id}'.")

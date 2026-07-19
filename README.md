@@ -2,13 +2,13 @@
 
 Mensura is an open-source, local-first and self-hostable agentic development platform. It is intended to combine a desktop developer workspace, controlled agent execution, durable project memory, mandatory quality gates, and an open plugin ecosystem.
 
-The repository is at the foundation stage. The current runnable components are `@mensura/shared-types`, the minimal Python 3.12 Mensura Core HTTP API, and the Tauri/React Mensura Studio shell. Studio can select a workspace, inspect its local Git status, create a ready task, and create a queued placeholder run. Git inspection is read-only and returns path/change metadata without patches or file contents. Core still stores workspace/task/run resources only in process memory; it does not orchestrate agents or persist data across restarts.
+The repository is at the foundation stage. The current runnable components are `@mensura/shared-types`, the minimal Python 3.12 Mensura Core HTTP API, and the Tauri/React Mensura Studio shell. Studio can select a workspace, inspect its local Git status, manually run configured Ruff/pytest Guard checks, create a ready task, and create a queued placeholder run. Git inspection is read-only and returns path/change metadata without patches or file contents. Core still stores workspace/task/run/Guard resources only in process memory; it does not orchestrate agents or persist data across restarts.
 
 ## Repository map
 
 - `packages/shared-types`: shared domain contracts, state machines, and runtime plugin manifest validation.
 - `apps/studio`: Tauri 2/React desktop shell and typed Core client.
-- `services/core`: versioned FastAPI resource contracts, RFC 9457 errors, read-only Git adapter, in-memory resource storage, and API tests.
+- `services/core`: versioned FastAPI resource contracts, RFC 9457 errors, read-only Git adapter, bounded Guard runner, in-memory resource storage, and API tests.
 - `docs/agent_memory.md`: current architecture, audit, implementation journal, decisions, and ordered next tasks.
 - `mensura_*.md`: product, architecture, API, module, roadmap, and setup source specifications.
 - `LICENSE`: GNU AGPL v3.

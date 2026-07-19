@@ -5,6 +5,10 @@ from mensura_core.api.problems import install_problem_handlers
 from mensura_core.api.router import router as v1_router
 from mensura_core.api.routers.health import router as health_router
 from mensura_core.git_adapter import GitPythonRepositoryAdapter, GitRepositoryAdapter
+from mensura_core.guard_config import GuardConfigurationLoader, JsonGuardConfigurationLoader
+from mensura_core.guard_repositories import GuardRunRepository, InMemoryGuardRunRepository
+from mensura_core.guard_runner import GuardCommandRunner, SubprocessGuardCommandRunner
+from mensura_core.guard_service import GuardService
 from mensura_core.repositories import CoreRepository, InMemoryCoreRepository
 from mensura_core.service import CoreService
 
@@ -12,6 +16,9 @@ from mensura_core.service import CoreService
 def create_app(
     repository: CoreRepository | None = None,
     git_repository: GitRepositoryAdapter | None = None,
+    guard_configuration_loader: GuardConfigurationLoader | None = None,
+    guard_command_runner: GuardCommandRunner | None = None,
+    guard_run_repository: GuardRunRepository | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Mensura Core API",
@@ -20,9 +27,16 @@ def create_app(
         docs_url="/docs",
         openapi_url="/openapi.json",
     )
+    core_repository = repository or InMemoryCoreRepository()
     app.state.core_service = CoreService(
-        repository or InMemoryCoreRepository(),
+        core_repository,
         git_repository or GitPythonRepositoryAdapter(),
+    )
+    app.state.guard_service = GuardService(
+        core_repository,
+        guard_configuration_loader or JsonGuardConfigurationLoader(),
+        guard_command_runner or SubprocessGuardCommandRunner(),
+        guard_run_repository or InMemoryGuardRunRepository(),
     )
     install_problem_handlers(app)
     app.include_router(health_router)

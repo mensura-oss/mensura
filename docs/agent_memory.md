@@ -5,7 +5,7 @@
 - Mensura is an AGPL-3.0 open-source, local-first and self-hostable agentic development platform for professional developers and teams.
 - It combines a desktop workspace (Studio), orchestration (Core), project memory (Vault), quality and policy gates (Guard), extensions (Hub), and optional voice control (Voice).
 - The product emphasizes reproducible agent runs, visible diffs and logs, human approval, mandatory checks, open MCP interoperability, and user-managed model providers.
-- Current implementation status: the repository has a runnable pnpm workspace, tested shared contracts, a verified minimal Mensura Core FastAPI service, and a verified Tauri/React Studio flow for workspace selection -> ready task -> queued run. Durable server persistence and agent execution remain unimplemented.
+- Current implementation status: the repository has a runnable pnpm workspace, tested shared contracts, a verified minimal Mensura Core FastAPI service, and a verified Tauri/React Studio flow for workspace selection -> ready task -> queued run, read-only repository inspection, and manually triggered lint/test Guard results. Durable server persistence and agent execution remain unimplemented.
 
 ## Source Documents Read
 
@@ -124,9 +124,9 @@
 
 ## Current Status
 
-- Work cycle 5 is implementation- and verification-complete: Core exposes replaceable read-only local Git inspection and Studio shows the active workspace repository summary. Git writes, patch content, and repository tree UI remain absent.
-- Core v1 now includes a tested replaceable read-only Git inspection adapter and repository endpoint in addition to versioned resource routes, predictable errors, replaceable in-memory storage, and OpenAPI. Final cycle-wide/live verification is still pending.
-- Git history: the initial license commit plus the committed foundation from work cycle 1; no product implementation history is deep enough for meaningful code hotspots yet.
+- Work cycle 6 is complete in the working tree from baseline commit `6552d2d`: Core has a manually triggered, bounded Ruff/pytest Guard runner and Studio has a compact active-workspace result panel.
+- Core v1 now includes tested replaceable read-only Git inspection and Guard execution adapters in addition to versioned resource routes, predictable RFC 9457 errors, replaceable in-memory storage, and OpenAPI.
+- Git history contains the initial license plus five completed incremental work-cycle commits before this cycle; it remains too short for meaningful code-hotspot inference.
 - Documentation: ten project specifications, the root README, and this execution journal are tracked.
 - Code at audit time: no applications, services, packages, tests, dependency manifests, CI, or local run scripts existed.
 - Code now: pnpm workspace commands, strict shared TypeScript configuration, and `@mensura/shared-types` with domain contracts, guarded task/run transitions, plugin permissions, and runtime manifest validation.
@@ -135,6 +135,91 @@
 - Repository risk history is too small for meaningful hotspot or bug-magnet analysis; current risk is specification breadth and premature scaffolding.
 
 ## Completed Work Log
+
+### 2026-07-19 16:06 MSK — Start work cycle 6: minimal Guard runner
+
+- Files changed: `docs/agent_memory.md`.
+- Audit: confirmed a clean worktree at `6552d2d`; re-read the Guard specification/API outline, existing aspirational check types, Core service/dependency/router/problem/storage patterns, Studio active-workspace client/query/mutation panels, and current cycle-5 verification notes. No Mensura-specific external memory entry exists, so repository contracts remain authoritative.
+- Configuration boundary: use one repository-local `.mensura/guard.json` with literal version 1, required `lint` and `test` entries, argv-array commands, per-check `blocking` flags, and one shared `timeoutSeconds` constrained to 1–300 seconds. Configuration is explicit and manually invoked; there is no command discovery, shell parsing, plugin policy, or auto-run behavior.
+- Execution safety before implementation: run argv with `shell=False` and workspace `rootPath` as cwd; reject missing/non-directory roots, oversized/malformed/out-of-root configuration, empty/oversized command tokens, and concurrent runs for the same workspace; bound each command by timeout and capture at most 8 KiB per stdout/stderr stream while draining excess output to avoid pipe deadlock.
+- Result boundary: add isolated v1 Guard request/response contracts for lint/test, passed/failed/error check states, per-check command/exit/duration/compact output, aggregate counts, and an explicit overall blocking boolean. Non-zero exit codes are structured check failures; process-start failures are RFC 9457 execution errors; timeouts are structured error checks so a completed request remains observable.
+- Storage/API boundary: keep only the latest completed Guard run per workspace in a replaceable lock-protected in-memory store; expose `POST /api/v1/workspaces/{workspace_id}/guard/runs` and `GET /api/v1/workspaces/{workspace_id}/guard/runs/latest`. The POST is synchronous in this cycle and must execute in FastAPI's worker thread rather than blocking the event loop.
+- Studio boundary: one independent TanStack Query/mutation panel for the active workspace with manual `Run checks`, pending state, overall pass/fail/blocking badge, per-check compact summaries, optional collapsed output, and local RFC 9457 errors. No auto-run, background polling, policy editing, log console, or global state is added.
+- Explicitly deferred: full policy engine, format/security/dependency/secret checks, Vault, auth, plugins, CI, background workers/queues, run-task orchestration, durable Guard history, cancellation, streaming output, and broad language/toolchain discovery.
+- Follow-up: define and verify the shared Guard wire contracts before implementing command execution.
+
+### 2026-07-19 — Define the Guard v1 shared contract
+
+- Files changed: `packages/shared-types/src/{guard,guard.test,index}.ts` and `docs/agent_memory.md`.
+- Defined: exact `lint | test` check kinds; `passed | failed | error` check states; `passed | failed` run states; optional check selection request; per-check blocking/command/exit/duration/stdout/stderr/truncation fields; aggregate total/pass/fail/error/blocking-failure counts; top-level blocking state; UUID/timestamp run response.
+- Compatibility choice: these transport types are isolated in `guard.ts` rather than expanding the earlier aspirational domain `CheckResult`, whose broader format/unit/integration/security vocabulary belongs to later policy work.
+- Semantics: any failed or error check makes overall status `failed`; only a failed/error check configured as blocking makes `blocking` and `summary.isBlocking` true. This preserves visibility of non-blocking failures without pretending the check passed.
+- Verification: shared strict TypeScript checking and 12 tests pass, including exact MVP Guard vocabulary.
+- Follow-up: implement the repository-local config loader, bounded subprocess adapter, latest-run store, Guard service, RFC 9457 handlers, and both workspace-scoped endpoints before changing Studio.
+
+### 2026-07-19 — Prepare the Core Guard execution step
+
+- Files changed: `docs/agent_memory.md`.
+- Planned modules: isolate Pydantic Guard API/config models, JSON config loading, subprocess execution, in-memory latest-run storage, and Guard application service. Routers depend only on `GuardService`; Git/task/run services do not execute commands.
+- Process contract: execute sequentially in requested/config order, use no shell, retain argv in the result, measure monotonic duration, drain stdout/stderr concurrently into bounded buffers, terminate the process group on timeout where supported, and never interpret command output as instructions.
+- Error contract: missing config `guard-configuration-not-found` (404); invalid/unsafe config `invalid-guard-configuration` (422); missing/non-directory workspace root `unsupported-workspace-state` (409); process spawn failure `guard-execution-failed` (500); same-workspace overlap `guard-run-in-progress` (409); no latest result uses normal resource-not-found (404).
+- Test contract: deterministic fake runner tests cover aggregate semantics and storage; real bounded runner tests cover cwd, stdout/stderr, exit code, truncation, and timeout; API tests cover pass, lint fail, test fail, missing config/workspace, invalid config, execution error, latest lookup, camelCase/OpenAPI, and compact output.
+- Follow-up: implement and independently verify Core with no Studio dependency.
+
+### 2026-07-19 — Implement and verify the bounded Core Guard runner
+
+- Files changed: `services/core/src/mensura_core/{guard_models,guard_config,guard_runner,guard_repositories,guard_service,exceptions,main}.py`, `services/core/src/mensura_core/api/{dependencies,problems,router,routers/guard}.py`, `services/core/tests/{test_guard_runner,test_guard_api,test_openapi}.py`, and `docs/agent_memory.md`.
+- Implemented architecture: `GuardService` depends on separate configuration-loader, command-runner, latest-run repository, and existing workspace repository protocols. `create_app` wires JSON/Git-independent defaults while keeping every Guard adapter injectable for future storage/runner replacements.
+- Controlled configuration: `.mensura/guard.json` is strict camelCase v1 JSON capped at 64 KiB and cannot resolve outside the workspace. Both checks are required. Lint may invoke only Ruff and test only pytest, either directly or via a narrowly recognized Python executable plus `-m`; raw shells, inline eval, arbitrary executables, missing/blank/newline tokens, unknown fields, and out-of-range timeouts are rejected.
+- Bounded execution: commands run sequentially with `shell=False`, cwd fixed to workspace root, a small environment allowlist, Python startup injection removed, pytest plugin autoload disabled, per-check timeout, POSIX process-group termination, concurrent stdout/stderr draining, and 8 KiB capture per stream. Exit code, duration, command, compact outputs, and truncation are observable.
+- Normalization: Ruff JSON failures become diagnostic counts when parseable; pytest/non-JSON failures retain exit-code summaries; timeout becomes a structured `error` result with null exit code; failed/error checks set overall `failed`, while only configured blocking failures set the blocking decision.
+- API/storage: added synchronous `POST /api/v1/workspaces/{workspace_id}/guard/runs` (runs in FastAPI's worker thread) and `GET .../latest`; only the latest completed response is stored per workspace in process memory. A lock prevents overlapping runs for one workspace without serializing different workspaces.
+- Problems: stable RFC 9457 URNs cover missing config, invalid config, unsupported root, process-start failure, and run-in-progress; missing workspace/latest result uses the existing resource-not-found contract. Expected non-zero check exits remain `201` structured results, not HTTP errors.
+- Verification: Ruff lint/format passed and all 34 Core tests passed with warnings treated as errors. Tests execute real disposable Ruff/pytest workspaces for pass, blocking lint failure, non-blocking test failure, latest retrieval, missing config/workspace/root, invalid tool, sanitized spawn failure, plus runner cwd/streams/truncation/timeout/start-failure behavior and OpenAPI shape.
+- Issue resolved: the first warnings-as-errors run exposed unclosed parent pipe handles after reader threads completed. Explicit handle closure removed ResourceWarnings without weakening bounded draining.
+- Follow-up: add the typed Studio client/query/mutation panel and verify UI behavior independently before creating the repository's real Guard config.
+
+### 2026-07-19 — Prepare the Studio Guard result step
+
+- Files changed: `docs/agent_memory.md`.
+- Planned client/query boundary: add typed `createGuardRun(workspaceId, request)` and `getLatestGuardRun(workspaceId)` methods plus one workspace-scoped latest query key. The manual mutation seeds the latest response and refetches it non-blockingly, matching existing mutation semantics.
+- Planned UI: render no-selection guidance, latest-loading/no-result state, `Run checks` pending control, overall Passed/Failed plus Blocking/Non-blocking badges, aggregate counts, and one compact card each for lint/test. Output stays collapsed in native `<details>` and is omitted entirely when empty.
+- Failure isolation: POST/config/execution problems appear next to the action; GET no-latest is an expected empty state rather than a red error, while other RFC 9457 results remain structured. Guard failure does not disable repository/task/run panels.
+- Test boundary: cover encoded URLs/request body, no selection, no latest result, pending mutation, passing result, blocking failure, compact/collapsed output, RFC 9457 mutation failure, and App-level independence.
+- Follow-up: implement Studio without configuration editing, auto-run, polling, cancellation, or raw log console.
+
+### 2026-07-19 — Implement and verify the Studio Guard panel
+
+- Files changed: `apps/studio/src/api/{coreClient,coreClient.test}.ts`, `apps/studio/src/app/{App,App.test}.tsx`, `apps/studio/src/app/queryClient.ts`, `apps/studio/src/features/guard/{GuardPanel,GuardPanel.test}.tsx`, `apps/studio/src/test/render.tsx`, `apps/studio/src/styles.css`, related Core latest-run problem files/tests, and `docs/agent_memory.md`.
+- Implemented client/state: typed create/latest Guard methods with encoded workspace IDs and `{}` request body; one latest-run query key; manual TanStack mutation; immediate latest-cache seeding followed by non-blocking invalidation; no client state store or optimistic check result.
+- Implemented UI: active-workspace-only `Run checks`; loading and in-request status; explicit no-history guidance; overall Passed/Failed and Blocking/Non-blocking badges; passed/failed/error/duration counts; compact lint/test cards with summary, exit, duration, configured blocking flag, argv, truncation indicator, and collapsed stdout/stderr only when present.
+- Error behavior: introduced `urn:mensura:problem:guard-run-not-found` so an empty latest history is a neutral Studio state without confusing it with a missing workspace. POST configuration/execution problems remain structured action errors. Guard UI/query failure is independent from repository/task/run state.
+- Scope held: no config editor, check selection UI, auto-run, interval polling, cancellation, streamed output, policy rules, history list, or full log console.
+- Verification: Studio strict TypeScript checking and all 29 tests across 11 files pass. Coverage includes client POST/GET serialization, no selection, no history, pending manual run, passing aggregate/result cards, blocking failure/truncation/collapsed output, RFC 9457 mutation failure, and existing App flow independence.
+- Test issue resolved: initial assertions queried duplicate visual labels (`Passed`/`Failed`) shared by the heading and count definitions. Tests now select the semantic `strong`/`dt` elements rather than weakening UI labels.
+- Follow-up: add the repository's real explicit Ruff/pytest config, document trust/runtime limits, run the full matrix, then manually trigger Guard against Mensura through live Core and release Studio.
+
+### 2026-07-19 — Prepare repository configuration and acceptance verification
+
+- Files changed: `docs/agent_memory.md`.
+- Planned Mensura config: `.mensura/guard.json` v1 with 120-second per-check timeout; blocking Ruff JSON lint over `services/core/src` and `services/core/tests`; blocking pytest over `services/core/tests` with concise output and warnings treated as errors. This intentionally validates the currently implemented Core Guard boundary rather than claiming whole-monorepo language coverage.
+- Documentation plan: publish exact config schema/example, Ruff/pytest-only restriction, trusted-config/manual-trigger boundary, synchronous request behavior, output/time limits, latest-only in-memory storage, problem URNs, and Studio interaction. Remove Guard from the deferred list but keep the policy engine and orchestration integration deferred.
+- Automated verification plan: run root `pnpm check`, Core Ruff/format and all tests with warnings as errors, Rust format, config JSON validation, and whitespace checks; then build final native app/DMG.
+- Live verification plan: start fresh Core, create a workspace for the current Mensura root, confirm neutral latest state, POST a real Guard run, verify both checks pass and GET latest matches, launch the release Studio app, select the workspace, manually click `Run checks`, and observe compact non-blocking passing results plus Core endpoint logs.
+- Safety/evidence boundary: the user-authored cycle explicitly authorizes manual configured Guard execution. Only the checked-in Ruff/pytest argv will run, with no shell or discovery. Live success proves current Mensura Core lint/tests, not a general policy engine or full monorepo gate.
+- Follow-up: implement configuration/docs and record only observed verification results.
+
+### 2026-07-19 16:29 MSK — Verify and complete the minimal Guard vertical slice
+
+- Files changed: `.mensura/guard.json`, `packages/shared-types/src/{guard,guard.test,index}.ts`, Guard modules/routes/problems/tests under `services/core`, Guard client/query/panel/tests under `apps/studio`, root/Core/Studio READMEs, and `docs/agent_memory.md`.
+- Config model: one trusted repository-local `.mensura/guard.json` v1 with required lint and test argv arrays, per-check blocking flags, and a shared 1–300 second timeout. The checked-in Mensura config runs only Core Ruff JSON lint and Core pytest, both blocking, with no shell or command discovery.
+- Core result: `POST /api/v1/workspaces/{workspace_id}/guard/runs` executes selected configured checks synchronously and `GET .../latest` returns the latest completed in-memory result. Responses contain stable passed/failed/error states, blocking decisions, exit codes, durations, compact summaries, argv, and at most 8 KiB each of stdout/stderr; non-zero exits are structured `201` results rather than transport failures.
+- Studio result: the active-workspace panel manually starts checks, shows an observable pending state, then renders overall pass/fail and blocking state plus compact per-check details. No-history is neutral, RFC 9457 problems remain local to the panel, and captured output is collapsed rather than dumped into the main shell.
+- Runner hardening: subprocesses use argv without a shell, fixed workspace cwd, reduced environment, per-check timeout, and process groups where supported. Concurrent readers prevent pipe deadlock; a final regression test proves a completed parent cannot leave the request hanging merely because a descendant inherited its output pipes.
+- Automated verification: root `pnpm check` passed strict shared/Studio typechecks, 12 shared tests, 29 Studio tests, production frontend builds, and native `cargo check`; Core Ruff lint/format and all 36 Python tests passed with warnings as errors; Rust formatting, Guard JSON parsing, and `git diff --check` passed.
+- Native/live verification: final Studio code produced the release binary, macOS app bundle, and arm64 DMG. Against fresh Uvicorn state, latest-before-run returned the dedicated 404 problem, direct POST returned a two-check passing result and matching latest resource, and the release Studio WebView displayed the prior result, the disabled `Running checks…` state, then a fresh Passed/Non-blocking result. Core logged the WebView POST as `201` and latest refresh as `200`; both processes stopped cleanly.
+- Safety boundary: this is controlled execution of trusted project configuration, not OS sandboxing. Ruff and pytest can execute repository Python code and can read/write with Core's operating-system permissions; there is no network isolation, policy pack, auto-run, background worker, cancellation, durable history, or task/run orchestration integration.
+- Next priority: add deterministic Vault repository file inventory and basic retrieval behind a replaceable adapter, without embeddings, so the next orchestration slice has explicit inspectable context rather than fabricated agent behavior.
 
 ### 2026-07-19 15:41 MSK — Start work cycle 5: read-only repository summary
 
@@ -379,18 +464,18 @@
 - Task lifecycle rules that require review before approval and support revision/retry paths.
 - Run lifecycle rules that require checking and an approval checkpoint before completion.
 - Runtime plugin manifest validation for supported types and permissions, semantic versions, duplicate permissions, and unsafe entry paths.
-- Automated coverage for the implemented lifecycle and plugin validation behavior (10 passing tests).
-- Python 3.12 FastAPI Core service with enabled OpenAPI and eight implemented HTTP endpoints.
+- Automated coverage for shared lifecycle, plugin validation, and Guard wire-contract behavior (12 passing tests).
+- Python 3.12 FastAPI Core service with enabled OpenAPI and ten implemented HTTP endpoints.
 - Workspace creation/listing with exact-root conflict detection in a process-local repository.
 - Task creation/retrieval tied to an existing workspace; created tasks begin in `ready` status.
 - Placeholder run creation/retrieval; created runs remain `queued` and perform no orchestration or side effects.
 - RFC 9457 `application/problem+json` responses for resource misses, conflicts, request validation, framework HTTP errors, and generic internal failures.
 - CamelCase JSON contracts aligned with TypeScript Workspace/Task ownership and documented in OpenAPI.
-- Twenty-three passing Core API/OpenAPI/Git-adapter tests plus successful real-Uvicorn repository inspection.
+- Thirty-six passing Core service/runner/API/OpenAPI/Git-adapter tests plus successful real-Uvicorn repository inspection and Guard execution.
 - Tauri 2 desktop Studio with React 19, Vite 8, a single resizable window, desktop app icons, CSP, and a local-Core-only native HTTP capability.
 - TanStack Query-backed Core health polling, workspace list/create behavior, task lookup, and run lookup with explicit loading, empty, success, connection-error, and RFC 9457 error states.
 - Shared Health, workspace transport, and Problem Details contracts aligned with Core's camelCase responses and nullable fields.
-- Twenty-three passing Studio client/component/acceptance tests and successful native release binary, macOS `.app`, and DMG builds.
+- Twenty-nine passing Studio client/component/acceptance tests and successful native release binary, macOS `.app`, and DMG builds.
 - Verified live desktop connectivity from the release Tauri WebView to Core health and workspace endpoints.
 - Persisted active workspace selection with stale-ID reconciliation after Core restart.
 - Accessible active-workspace task creation with client validation, RFC 9457 failures, value preservation on failure, and immediate ready-task details.
@@ -400,16 +485,20 @@
 - Replaceable read-only `GitRepositoryAdapter` with a GitPython implementation for branch, detached HEAD, clean/dirty, staged/unstaged/untracked counts, and safe changed-path metadata.
 - Workspace-scoped repository inspection endpoint with dedicated RFC 9457 problems for missing paths, non-repositories, and unsupported Git states.
 - Compact active-workspace Studio repository panel with independent TanStack Query failure handling and bounded changed-path rendering.
+- Isolated shared Guard v1 contracts for lint/test selection, normalized check states, compact output, aggregate counts, and explicit blocking decisions.
+- Replaceable Core Guard config/runner/latest-store boundaries with strict repository-local configuration, Ruff/pytest allowlisting, no-shell execution, timeout/process-group handling, bounded concurrent output capture, and same-workspace overlap prevention.
+- Workspace-scoped Guard create/latest endpoints with dedicated RFC 9457 problems for missing or invalid configuration, unsupported roots, execution startup failure, overlapping runs, and absent history.
+- Compact active-workspace Studio Guard panel with manual execution, visible pending state, overall and per-check status, collapsed bounded output, neutral no-history state, and independent RFC 9457 failure handling.
+- Verified live release-Studio -> Core -> configured Ruff/pytest -> normalized Guard result -> refreshed Studio result flow on the Mensura repository.
 
 ## Pending Tasks
 
 ### MVP
 
-1. Add the first Guard runner for narrowly configured lint/test commands with structured, blocking results and a compact Studio result view.
-2. Add deterministic Vault repository indexing and basic retrieval; defer embeddings until the ingestion contract is stable.
-3. Implement one observable execution flow: queued run -> explicit stub/provider adapter -> produce safe diff metadata -> execute Guard -> review -> approve/reject.
-4. Add Docker Compose only for dependencies required by the working flow, plus CI for format, typecheck, tests, and builds.
-5. Replace temporary in-memory adapters with durable storage where acceptance criteria require restart-safe history.
+1. Add deterministic Vault repository file inventory and basic retrieval; defer embeddings until the ingestion contract is stable.
+2. Implement one observable execution flow: queued run -> explicit provider/runner adapter -> produce safe diff metadata -> execute Guard -> review -> approve/reject.
+3. Add Docker Compose only for dependencies required by the working flow, plus CI for format, typecheck, tests, and builds.
+4. Replace temporary in-memory adapters with durable storage where acceptance criteria require restart-safe history.
 
 ### Post-MVP
 
@@ -497,6 +586,13 @@
 - Reason: one operation minimizes inconsistent results and contract duplication across separate branch/status/diff calls, while the protocol keeps GitPython and local-process assumptions replaceable.
 - Alternatives considered: shelling out directly from routers, multiple granular HTTP endpoints, raw patches, and early Dulwich integration; rejected because they couple transport to implementation, multiply race windows, expose unnecessary content, or add replacement work before the contract is proven.
 - Consequences: workspace roots must currently be committed non-bare worktree roots; detached HEAD is supported as a null branch; responses may repeat one path for staged and unstaged metadata but count unique paths; concurrent external changes can make the read best-effort rather than atomic; invalid states are isolated RFC 9457 problems; no Git writes or patch content exist in the production surface.
+
+### Trusted, bounded Guard execution
+
+- Decision: load one strict `.mensura/guard.json` v1 from the workspace, accept argv arrays only, allow Ruff for lint and pytest for tests, and execute them behind injectable loader/runner/store protocols with synchronous workspace-scoped endpoints.
+- Reason: the first useful Guard slice needs real project checks and structured blocking results, while explicit tools and no-shell argv keep the execution surface understandable and replaceable without pretending to provide a complete policy or sandbox system.
+- Alternatives considered: shell command strings, toolchain auto-discovery, arbitrary executables, a background queue, separate Guard service, raw unbounded logs, and immediate policy packs. Rejected or deferred because they widen trust, add hidden behavior or infrastructure, and are unnecessary for a manually triggered two-check MVP.
+- Consequences: configuration is trusted executable project input; Ruff/pytest may execute repository code with the Core process's filesystem/network permissions. Each check is time-bounded, output capture is bounded, overlapping runs for one workspace are rejected, only the latest completed run survives in memory, and transport/storage/runner adapters can later be replaced without changing the v1 response shape.
 
 ## Open Questions
 

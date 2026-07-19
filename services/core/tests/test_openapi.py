@@ -9,6 +9,8 @@ def test_openapi_exposes_the_implemented_v1_contract(client: TestClient) -> None
         "/health",
         "/api/v1/workspaces",
         "/api/v1/workspaces/{workspace_id}/repository",
+        "/api/v1/workspaces/{workspace_id}/guard/runs",
+        "/api/v1/workspaces/{workspace_id}/guard/runs/latest",
         "/api/v1/tasks/{task_id}",
         "/api/v1/tasks",
         "/api/v1/tasks/{task_id}/runs",
@@ -21,6 +23,7 @@ def test_openapi_documents_camel_case_and_problem_media_type(client: TestClient)
     workspace_create = schema["components"]["schemas"]["WorkspaceCreate"]
     task = schema["components"]["schemas"]["Task"]
     repository_summary = schema["components"]["schemas"]["RepositorySummary"]
+    guard_run = schema["components"]["schemas"]["GuardRunResponse"]
 
     assert set(workspace_create["properties"]) == {"name", "rootPath"}
     assert "workspaceId" in task["properties"]
@@ -39,6 +42,9 @@ def test_openapi_documents_camel_case_and_problem_media_type(client: TestClient)
         forbidden not in repository_summary["properties"]
         for forbidden in ("patch", "content", "body", "hunks")
     )
+    assert "workspaceId" in guard_run["properties"]
+    assert "blocking" in guard_run["properties"]
+    assert "checks" in guard_run["properties"]
 
     error_response = schema["paths"]["/api/v1/tasks/{task_id}"]["get"]["responses"]["404"]
     assert set(error_response["content"]) == {"application/problem+json"}

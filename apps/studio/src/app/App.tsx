@@ -1,5 +1,6 @@
 import { useCoreClient } from "../api/CoreClientProvider";
 import { HealthPanel } from "../features/health/HealthPanel";
+import { GuardPanel } from "../features/guard/GuardPanel";
 import { RunInspector } from "../features/runs/RunInspector";
 import { RepositorySummaryPanel } from "../features/repository/RepositorySummaryPanel";
 import { TaskInspector } from "../features/tasks/TaskInspector";
@@ -26,6 +27,12 @@ export function App() {
         </div>
         <div className="dashboard-grid__repository">
           <RepositorySummaryPanel activeWorkspaceId={activeWorkspaceId} />
+        </div>
+        <div className="dashboard-grid__guard">
+          <GuardPanel
+            key={activeWorkspaceId ?? "no-workspace"}
+            activeWorkspaceId={activeWorkspaceId}
+          />
         </div>
         <div className="dashboard-grid__task-flow">
           <TaskCreationPanel

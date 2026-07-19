@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createTestClient, renderWithAppProviders } from "../test/render";
+import { CoreApiError } from "../api/coreClient";
 import { App } from "./App";
 import { ACTIVE_WORKSPACE_STORAGE_KEY } from "./useActiveWorkspaceId";
 
@@ -61,6 +62,14 @@ describe("App task flow", () => {
           version: "0.1.0",
         }),
       getRun: () => Promise.resolve(run),
+      getLatestGuardRun: () =>
+        Promise.reject(
+          new CoreApiError({
+            type: "urn:mensura:problem:guard-run-not-found",
+            title: "Guard run not found",
+            status: 404,
+          }),
+        ),
       getTask: () => Promise.resolve(task),
       getWorkspaceRepository: () =>
         Promise.reject(

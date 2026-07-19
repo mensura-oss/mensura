@@ -2,6 +2,8 @@ import type {
   CreateWorkspaceRequest,
   CreateTaskRequest,
   HealthResponse,
+  GuardRunRequest,
+  GuardRunResponse,
   ProblemDetails,
   RepositorySummary,
   Run,
@@ -20,9 +22,14 @@ export type CoreFetcher = (
 export interface CoreClient {
   readonly baseUrl: string;
   createRun(taskId: string): Promise<Run>;
+  createGuardRun(
+    workspaceId: string,
+    input?: GuardRunRequest,
+  ): Promise<GuardRunResponse>;
   createTask(input: CreateTaskRequest): Promise<Task>;
   createWorkspace(input: CreateWorkspaceRequest): Promise<Workspace>;
   getHealth(): Promise<HealthResponse>;
+  getLatestGuardRun(workspaceId: string): Promise<GuardRunResponse>;
   getRun(runId: string): Promise<Run>;
   getTask(taskId: string): Promise<Task>;
   getWorkspaceRepository(workspaceId: string): Promise<RepositorySummary>;
@@ -115,6 +122,16 @@ export function createCoreClient(options?: {
 
   return {
     baseUrl,
+    createGuardRun(workspaceId, input = {}) {
+      return request<GuardRunResponse>(
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/guard/runs`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        },
+      );
+    },
     createRun(taskId) {
       return request<Run>(
         `/api/v1/tasks/${encodeURIComponent(taskId)}/runs`,
@@ -137,6 +154,11 @@ export function createCoreClient(options?: {
     },
     getHealth() {
       return request<HealthResponse>("/health");
+    },
+    getLatestGuardRun(workspaceId) {
+      return request<GuardRunResponse>(
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/guard/runs/latest`,
+      );
     },
     getRun(runId) {
       return request<Run>(`/api/v1/runs/${encodeURIComponent(runId)}`);

@@ -140,4 +140,45 @@ describe("Core client", () => {
       undefined,
     );
   });
+
+  it("creates and retrieves Guard runs for an encoded workspace ID", async () => {
+    const run = {
+      id: "cce3fd08-ea41-45b0-ac24-d0349acb18b8",
+      workspaceId: "workspace/id",
+      status: "passed" as const,
+      blocking: false,
+      summary: {
+        totalCount: 0,
+        passedCount: 0,
+        failedCount: 0,
+        errorCount: 0,
+        blockingFailures: 0,
+        isBlocking: false,
+      },
+      checks: [],
+      startedAt: "2026-07-19T13:00:00Z",
+      completedAt: "2026-07-19T13:00:00Z",
+      durationMs: 0,
+    };
+    const fetcher = vi.fn(() => Promise.resolve(Response.json(run, { status: 201 })));
+    const client = createCoreClient({ baseUrl: "http://core.test", fetcher });
+
+    await expect(client.createGuardRun(run.workspaceId, {})).resolves.toEqual(run);
+    expect(fetcher).toHaveBeenNthCalledWith(
+      1,
+      "http://core.test/api/v1/workspaces/workspace%2Fid/guard/runs",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      },
+    );
+
+    await expect(client.getLatestGuardRun(run.workspaceId)).resolves.toEqual(run);
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      "http://core.test/api/v1/workspaces/workspace%2Fid/guard/runs/latest",
+      undefined,
+    );
+  });
 });
