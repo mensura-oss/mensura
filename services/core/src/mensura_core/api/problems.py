@@ -20,9 +20,14 @@ from mensura_core.exceptions import (
     GuardRunInProgressError,
     GuardRunNotFoundError,
     NotGitRepositoryError,
+    ProviderExecutionFailedError,
     RepositoryPathNotFoundError,
     ResourceConflictError,
     ResourceNotFoundError,
+    RunContextInconsistentError,
+    RunContextPackMissingError,
+    RunInvalidStateError,
+    StructuredResultInvalidError,
     UnsupportedRepositoryStateError,
     UnsupportedWorkspaceStateError,
     VaultBinaryPreviewError,
@@ -59,6 +64,11 @@ CONTEXT_PACK_TOO_LARGE_TYPE = "urn:mensura:problem:context-pack-too-large"
 CONTEXT_PACK_FILE_CHANGED_TYPE = "urn:mensura:problem:context-pack-file-changed"
 CONTEXT_PACK_NOT_FOUND_TYPE = "urn:mensura:problem:context-pack-not-found"
 CONTEXT_PACK_WORKSPACE_MISMATCH_TYPE = "urn:mensura:problem:context-pack-workspace-mismatch"
+RUN_INVALID_STATE_TYPE = "urn:mensura:problem:run-invalid-state"
+RUN_CONTEXT_PACK_MISSING_TYPE = "urn:mensura:problem:run-context-pack-missing"
+RUN_CONTEXT_INCONSISTENT_TYPE = "urn:mensura:problem:run-context-inconsistent"
+PROVIDER_EXECUTION_FAILED_TYPE = "urn:mensura:problem:provider-execution-failed"
+STRUCTURED_RESULT_INVALID_TYPE = "urn:mensura:problem:structured-result-invalid"
 
 
 class InvalidParameter(BaseModel):
@@ -378,6 +388,66 @@ def install_problem_handlers(app: FastAPI) -> None:
             detail=error.detail,
         )
 
+    @app.exception_handler(RunInvalidStateError)
+    async def run_invalid_state_handler(
+        request: Request, error: RunInvalidStateError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=RUN_INVALID_STATE_TYPE,
+            title="Run cannot execute from its current state",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(RunContextPackMissingError)
+    async def run_context_pack_missing_handler(
+        request: Request, error: RunContextPackMissingError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=RUN_CONTEXT_PACK_MISSING_TYPE,
+            title="Bound context pack is unavailable",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(RunContextInconsistentError)
+    async def run_context_inconsistent_handler(
+        request: Request, error: RunContextInconsistentError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=RUN_CONTEXT_INCONSISTENT_TYPE,
+            title="Run context binding is inconsistent",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ProviderExecutionFailedError)
+    async def provider_execution_failed_handler(
+        request: Request, error: ProviderExecutionFailedError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=502,
+            problem_type=PROVIDER_EXECUTION_FAILED_TYPE,
+            title="Provider execution failed",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(StructuredResultInvalidError)
+    async def structured_result_invalid_handler(
+        request: Request, error: StructuredResultInvalidError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=502,
+            problem_type=STRUCTURED_RESULT_INVALID_TYPE,
+            title="Provider result is invalid",
+            detail=error.detail,
+        )
+
     @app.exception_handler(RequestValidationError)
     async def request_validation_handler(
         request: Request, error: RequestValidationError
@@ -444,3 +514,5 @@ GUARD_EXECUTION_RESPONSE = problem_response(500, "A configured Guard command cou
 FORBIDDEN_RESPONSE = problem_response(403, "The requested path is excluded from Vault access.")
 UNSUPPORTED_MEDIA_RESPONSE = problem_response(415, "The requested file is not previewable text.")
 PAYLOAD_TOO_LARGE_RESPONSE = problem_response(413, "The context-pack selection exceeds a limit.")
+EXECUTION_CONFLICT_RESPONSE = problem_response(409, "The run cannot execute from current state.")
+PROVIDER_EXECUTION_RESPONSE = problem_response(502, "The provider execution did not succeed.")

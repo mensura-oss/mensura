@@ -39,6 +39,7 @@ const run: Run = {
     totalPreviewBytes: 1024,
   },
   status: "queued",
+  execution: null,
   startedAt: null,
   finishedAt: null,
   createdAt: "2026-07-19T12:05:00Z",
@@ -74,7 +75,7 @@ describe("StartRunAction", () => {
     expect(
       await screen.findByText("Run created and queued with immutable context."),
     ).toBeVisible();
-    expect(screen.getByText("queued")).toBeVisible();
+    expect(screen.getAllByText("queued")[0]).toBeVisible();
     expect(screen.getByText(run.id)).toBeVisible();
     expect(createRun).toHaveBeenCalledWith(taskId, { contextPackId });
     expect(getRun).toHaveBeenCalledWith(run.id);

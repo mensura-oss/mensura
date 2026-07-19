@@ -32,6 +32,7 @@ describe("context pack v1 contracts", () => {
         totalPreviewBytes: 512,
       },
       status: "queued",
+      execution: null,
       startedAt: null,
       finishedAt: null,
       createdAt: "2026-07-19T12:00:00Z",

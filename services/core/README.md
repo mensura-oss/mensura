@@ -1,6 +1,6 @@
 # Mensura Core
 
-Mensura Core is the HTTP boundary for tasks and future agent execution. The current service implements the first versioned resource contracts, process-local resource storage, read-only local Git inspection, deterministic Vault file inventory/retrieval, immutable context-pack assembly, and a manually triggered Ruff/pytest Guard runner. It does not call models, edit repositories, generate embeddings, return patch content, implement a full policy engine, or persist data across restarts.
+Mensura Core is the HTTP boundary for tasks and controlled agent execution. The current service implements the first versioned resource contracts, process-local resource storage, read-only local Git inspection, deterministic Vault file inventory/retrieval, immutable context-pack assembly, a manually triggered Ruff/pytest Guard runner, and a manually triggered deterministic provider adapter with bounded structured results. It does not call an external model, edit repositories, generate embeddings, return patch content, implement a full policy engine, or persist data across restarts.
 
 ## Requirements
 
@@ -54,6 +54,7 @@ JSON property names use camelCase. Resource identifiers are UUIDs and timestamps
 | `GET` | `/api/v1/tasks/{task_id}` | Returns one task |
 | `POST` | `/api/v1/tasks` | Creates a ready task in an existing workspace |
 | `GET` | `/api/v1/runs/{run_id}` | Returns one run |
+| `POST` | `/api/v1/runs/{run_id}/execute` | Manually executes one queued run and returns its terminal record |
 | `POST` | `/api/v1/tasks/{task_id}/runs` | Creates a queued run bound to an immutable context pack |
 
 `POST /api/v1/tasks/{task_id}/runs` requires this strict body:
@@ -64,7 +65,17 @@ JSON property names use camelCase. Resource identifiers are UUIDs and timestamps
 }
 ```
 
-Core resolves the task first, requires the exact immutable pack to exist, and rejects a pack owned by another workspace. The stored/read run includes `contextPackId` plus a compact `contextPack` reference with workspace/inventory/schema identities and aggregate file/byte evidence. It only records a queued run; no worker or provider consumes it. SSE events are intentionally deferred until execution has real events to expose.
+Core resolves the task first, requires the exact immutable pack to exist, and rejects a pack owned by another workspace. The stored/read run includes `contextPackId` plus a compact `contextPack` reference with workspace/inventory/schema identities and aggregate file/byte evidence. Creation records a queued run only; execution remains a separate explicit action.
+
+## Manual run execution
+
+`POST /api/v1/runs/{run_id}/execute` accepts no body, replacement context, prompt, provider selection, or repository path. Core reloads the stored run and task, retrieves the exact bound immutable manifest, and rechecks direct pack identity, task/workspace ownership, inventory/schema identity, and stored aggregate evidence before invoking an adapter.
+
+The implemented state machine is exactly `queued -> running -> succeeded | failed`. An atomic expected-status repository update claims a queued run before provider work, so overlapping requests cannot both execute it. `startedAt` is persisted on the running transition; `finishedAt`, bounded duration, and either a validated result or safe failure are persisted on the terminal transition. Any later execute request is a `409` conflict. There is no cancellation or retry transition in this slice.
+
+`ProviderAdapter` isolates immutable adapter identity and a typed execution request/result. The default `DeterministicReviewProvider` is credential-free and receives only the stored Task plus the complete bounded `ContextPackManifest`; it receives no `Workspace`, `rootPath`, Git/filesystem/subprocess/network capability, or write method. It deterministically returns schema-v1 task intent, context aggregates and languages, bounded warnings, and recommended review steps. It does not assemble a vendor prompt, call a model, emit raw logs, or include captured preview bodies in the run result.
+
+Provider identity is visible as `providerId`, `adapterId`, `adapterVersion`, and nullable `model`. A succeeded result contains only code-bounded fields. Provider exceptions and invalid structured output persist a failed run with a closed failure code and safe summary before the execute request returns RFC 9457 Problem Details; exception and validation internals are not exposed. The HTTP action is synchronous and runs through FastAPI's worker-thread handling. Background workers, brokers, streaming/SSE, retries, provider credentials/selection, prompt versioning, repository changes, and orchestration remain deferred.
 
 ## Read-only repository inspection
 
@@ -176,8 +187,16 @@ Context packs additionally use:
 
 They also reuse Vault inventory/path/exclusion problems when those conditions are identical.
 
+Run execution additionally uses:
+
+- `urn:mensura:problem:run-invalid-state` (`409`) when a run is not queued;
+- `urn:mensura:problem:run-context-pack-missing` (`409`) when the persisted bound pack is no longer retrievable;
+- `urn:mensura:problem:run-context-inconsistent` (`409`) when task, workspace, manifest, or stored binding evidence disagrees;
+- `urn:mensura:problem:provider-execution-failed` (`502`) when an adapter raises during execution;
+- `urn:mensura:problem:structured-result-invalid` (`502`) when adapter output fails the bounded schema.
+
 Problem URNs are stable machine identifiers. They can be replaced by resolvable HTTPS documentation only as a versioned compatibility decision.
 
 ## Storage boundary
 
-Resource routers depend on `CoreService`; Guard routes depend on `GuardService`; Vault routes depend on `VaultService`; context-pack routes depend on `ContextPackService`. Services use replaceable storage/config/runner/Git/filesystem protocols. `InMemoryCoreRepository` stores workspaces/tasks/runs, `InMemoryGuardRunRepository` stores only the latest completed Guard result, `InMemoryVaultInventoryRepository` stores only the latest inventory/items, `InMemoryContextPackRepository` stores immutable manifests by workspace/digest, and the Git/filesystem adapters provide read-only live inspection. All in-memory resources disappear whenever Core stops. External filesystem changes can make any live read best-effort; preview and context capture therefore revalidate selected paths after inventory.
+Resource routers depend on `CoreService`; Guard routes depend on `GuardService`; Vault routes depend on `VaultService`; context-pack routes depend on `ContextPackService`. Services use replaceable storage/config/runner/Git/filesystem/provider protocols. `InMemoryCoreRepository` stores workspaces/tasks/runs and provides atomic expected-state replacement, `InMemoryGuardRunRepository` stores only the latest completed Guard result, `InMemoryVaultInventoryRepository` stores only the latest inventory/items, and `InMemoryContextPackRepository` stores immutable manifests by workspace/digest. Git/filesystem adapters provide read-only live inspection; the provider adapter consumes only persisted task/context objects. All in-memory resources disappear whenever Core stops. External filesystem changes can make inventory/context capture best-effort, but executing a run does not reread the repository and uses only the already captured immutable manifest.

@@ -3,13 +3,33 @@ from enum import StrEnum
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    model_validator,
+)
 from pydantic.alias_generators import to_camel
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
 RootPath = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=4096)]
 Title = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=240)]
 Description = Annotated[str, StringConstraints(strip_whitespace=True, max_length=10_000)]
+BoundedSummary = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)
+]
+BoundedMessage = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=300)
+]
+ProviderIdentifier = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)
+]
+ProviderVersion = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)
+]
+LanguageName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
 ContextPackDigest = Annotated[
     str,
     StringConstraints(pattern=r"^sha256:[0-9a-f]{64}$"),
@@ -60,13 +80,9 @@ class TaskStatus(StrEnum):
 
 class RunStatus(StrEnum):
     QUEUED = "queued"
-    PLANNING = "planning"
-    EXECUTING = "executing"
-    CHECKING = "checking"
-    AWAITING_APPROVAL = "awaiting_approval"
-    COMPLETED = "completed"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
     FAILED = "failed"
-    CANCELLED = "cancelled"
 
 
 class HealthResponse(ApiModel):
@@ -125,16 +141,106 @@ class RunContextPackReference(ResourceModel):
     total_preview_bytes: Annotated[int, Field(ge=0)]
 
 
+class RunProviderMetadata(ResourceModel):
+    provider_id: ProviderIdentifier
+    adapter_id: ProviderIdentifier
+    adapter_version: ProviderVersion
+    model: (
+        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=160)]
+        | None
+    )
+
+
+class RunExecutionContextSummary(ResourceModel):
+    context_pack_id: ContextPackDigest
+    inventory_id: UUID
+    file_count: Annotated[int, Field(ge=0)]
+    text_file_count: Annotated[int, Field(ge=0)]
+    binary_file_count: Annotated[int, Field(ge=0)]
+    total_file_bytes: Annotated[int, Field(ge=0)]
+    total_preview_bytes: Annotated[int, Field(ge=0)]
+    truncated_text_file_count: Annotated[int, Field(ge=0)]
+    languages: Annotated[tuple[LanguageName, ...], Field(max_length=32)]
+
+
+class RunExecutionResult(ResourceModel):
+    schema_version: Literal["1"] = "1"
+    task_summary: BoundedSummary
+    interpreted_intent: BoundedSummary
+    context: RunExecutionContextSummary
+    warnings: Annotated[tuple[BoundedMessage, ...], Field(max_length=8)]
+    recommended_next_steps: Annotated[tuple[BoundedMessage, ...], Field(min_length=1, max_length=8)]
+
+
+class RunExecutionFailureCode(StrEnum):
+    PROVIDER_EXECUTION_FAILED = "provider_execution_failed"
+    STRUCTURED_RESULT_INVALID = "structured_result_invalid"
+
+
+class RunExecutionFailure(ResourceModel):
+    code: RunExecutionFailureCode
+    summary: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
+
+
+class RunExecution(ResourceModel):
+    provider: RunProviderMetadata
+    duration_ms: Annotated[int, Field(ge=0, le=86_400_000)] | None = None
+    result: RunExecutionResult | None = None
+    failure: RunExecutionFailure | None = None
+
+
 class Run(ResourceModel):
     id: UUID
     task_id: UUID
     context_pack_id: ContextPackDigest
     context_pack: RunContextPackReference
     status: RunStatus
+    execution: RunExecution | None = None
     started_at: AwareDatetime | None = None
     finished_at: AwareDatetime | None = None
     created_at: AwareDatetime
     updated_at: AwareDatetime
+
+    @model_validator(mode="after")
+    def validate_execution_state(self) -> "Run":
+        if self.status is RunStatus.QUEUED:
+            valid = self.execution is None and self.started_at is None and self.finished_at is None
+        elif self.status is RunStatus.RUNNING:
+            valid = (
+                self.execution is not None
+                and self.execution.duration_ms is None
+                and self.execution.result is None
+                and self.execution.failure is None
+                and self.started_at is not None
+                and self.finished_at is None
+            )
+        elif self.status is RunStatus.SUCCEEDED:
+            valid = (
+                self.execution is not None
+                and self.execution.duration_ms is not None
+                and self.execution.result is not None
+                and self.execution.failure is None
+                and self.started_at is not None
+                and self.finished_at is not None
+            )
+        else:
+            valid = (
+                self.execution is not None
+                and self.execution.duration_ms is not None
+                and self.execution.result is None
+                and self.execution.failure is not None
+                and self.started_at is not None
+                and self.finished_at is not None
+            )
+        if not valid:
+            raise ValueError(f"Run fields are inconsistent with status '{self.status}'.")
+        if (
+            self.started_at is not None
+            and self.finished_at is not None
+            and self.finished_at < self.started_at
+        ):
+            raise ValueError("Run finishedAt cannot precede startedAt.")
+        return self
 
 
 def ensure_utc_timestamp(value: datetime) -> datetime:

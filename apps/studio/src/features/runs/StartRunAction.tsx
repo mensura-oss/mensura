@@ -32,6 +32,8 @@ export function StartRunAction({
     queryFn: () => client.getRun(createdRunId),
     enabled: createdRunId.length > 0,
     retry: false,
+    refetchInterval: (query) =>
+      query.state.data?.status === "running" ? 1_000 : false,
   });
   const createRun = useMutation({
     mutationFn: () => {
@@ -55,7 +57,7 @@ export function StartRunAction({
       <div className="run-action__controls">
         <div>
           <strong>Queued execution</strong>
-          <span>Creates a run record only; no worker executes it yet.</span>
+          <span>Creates a run first; provider execution is a separate manual action.</span>
         </div>
       </div>
 

@@ -34,6 +34,7 @@ export interface CoreClient {
     input: CreateContextPackRequest,
   ): Promise<CreateContextPackResponse>;
   createRun(taskId: string, input: CreateRunRequest): Promise<Run>;
+  executeRun(runId: string): Promise<Run>;
   createGuardRun(
     workspaceId: string,
     input?: GuardRunRequest,
@@ -188,6 +189,12 @@ export function createCoreClient(options?: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
+    },
+    executeRun(runId) {
+      return request<Run>(
+        `/api/v1/runs/${encodeURIComponent(runId)}/execute`,
+        { method: "POST" },
+      );
     },
     createWorkspace(input) {
       return request<Workspace>("/api/v1/workspaces", {

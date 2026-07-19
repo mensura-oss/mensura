@@ -20,6 +20,7 @@ def test_openapi_exposes_the_implemented_v1_contract(client: TestClient) -> None
         "/api/v1/tasks",
         "/api/v1/tasks/{task_id}/runs",
         "/api/v1/runs/{run_id}",
+        "/api/v1/runs/{run_id}/execute",
     }
 
 
@@ -35,6 +36,9 @@ def test_openapi_documents_camel_case_and_problem_media_type(client: TestClient)
     context_pack_create = schema["components"]["schemas"]["CreateContextPackRequest"]
     run_create = schema["components"]["schemas"]["RunCreate"]
     run = schema["components"]["schemas"]["Run"]
+    run_execution = schema["components"]["schemas"]["RunExecution"]
+    execution_result = schema["components"]["schemas"]["RunExecutionResult"]
+    provider = schema["components"]["schemas"]["RunProviderMetadata"]
 
     assert set(workspace_create["properties"]) == {"name", "rootPath"}
     assert "workspaceId" in task["properties"]
@@ -82,11 +86,35 @@ def test_openapi_documents_camel_case_and_problem_media_type(client: TestClient)
         "contextPackId",
         "contextPack",
         "status",
+        "execution",
         "startedAt",
         "finishedAt",
         "createdAt",
         "updatedAt",
     }
+    assert set(run_execution["properties"]) == {
+        "provider",
+        "durationMs",
+        "result",
+        "failure",
+    }
+    assert set(execution_result["properties"]) == {
+        "schemaVersion",
+        "taskSummary",
+        "interpretedIntent",
+        "context",
+        "warnings",
+        "recommendedNextSteps",
+    }
+    assert set(provider["properties"]) == {
+        "providerId",
+        "adapterId",
+        "adapterVersion",
+        "model",
+    }
+    execute = schema["paths"]["/api/v1/runs/{run_id}/execute"]["post"]
+    assert "requestBody" not in execute
+    assert set(execute["responses"]) == {"200", "404", "409", "422", "502"}
     assert set(context_pack["properties"]) == {
         "id",
         "digest",

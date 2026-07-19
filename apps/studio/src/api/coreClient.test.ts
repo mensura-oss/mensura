@@ -113,6 +113,7 @@ describe("Core client", () => {
         totalPreviewBytes: 1024,
       },
       status: "queued" as const,
+      execution: null,
       startedAt: null,
       finishedAt: null,
       createdAt: "2026-07-19T12:05:00Z",
@@ -131,6 +132,21 @@ describe("Core client", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ contextPackId }),
       },
+    );
+  });
+
+  it("manually executes an encoded run ID without a request body", async () => {
+    const run = {
+      id: "run/id",
+      status: "succeeded" as const,
+    };
+    const fetcher = vi.fn(() => Promise.resolve(Response.json(run)));
+    const client = createCoreClient({ baseUrl: "http://core.test", fetcher });
+
+    await expect(client.executeRun(run.id)).resolves.toEqual(run);
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://core.test/api/v1/runs/run%2Fid/execute",
+      { method: "POST" },
     );
   });
 

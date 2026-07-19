@@ -5,7 +5,7 @@
 - Mensura is an AGPL-3.0 open-source, local-first and self-hostable agentic development platform for professional developers and teams.
 - It combines a desktop workspace (Studio), orchestration (Core), project memory (Vault), quality and policy gates (Guard), extensions (Hub), and optional voice control (Voice).
 - The product emphasizes reproducible agent runs, visible diffs and logs, human approval, mandatory checks, open MCP interoperability, and user-managed model providers.
-- Current implementation status: the repository has a runnable pnpm workspace, tested shared contracts, a verified minimal Mensura Core FastAPI service, and a verified Tauri/React Studio flow for workspace selection -> Vault inventory -> immutable context pack -> ready task -> context-bound queued run, plus read-only repository inspection and manually triggered lint/test Guard results. Durable server persistence and agent/provider execution remain unimplemented.
+- Current implementation status: the repository has a runnable pnpm workspace, tested shared contracts, a verified minimal Mensura Core FastAPI service, and a verified Tauri/React Studio flow for workspace selection -> Vault inventory -> immutable context pack -> ready task -> context-bound queued run -> manually triggered deterministic provider result, plus read-only repository inspection and manually triggered lint/test Guard results. Durable server persistence, external model providers, repository changes, and orchestration remain unimplemented.
 
 ## Source Documents Read
 
@@ -124,6 +124,7 @@
 
 ## Current Status
 
+- Work cycle 10 is complete in the working tree from clean baseline commit `ac80ea8`: queued runs can be manually executed through an injected deterministic provider using only the persisted task/context pack, with atomic explicit transitions and bounded structured result/failure review in Studio.
 - Work cycle 9 is complete in the working tree from clean baseline commit `9d63e6e`: queued run creation requires an existing immutable context pack owned by the task workspace, persists the exact binding, and Studio shows the selected and stored execution context before any provider execution.
 - Work cycle 8 is complete in the working tree from clean baseline commit `9c258d3`: Core creates deterministic immutable context packs only from an existing Vault inventory, and Studio explicitly selects and reviews their exact bounded evidence without provider execution.
 - Work cycle 7 is complete in the working tree from clean baseline commit `a893268`: Core has deterministic process-local Vault inventory and bounded safe text retrieval, and Studio has a compact active-workspace inventory/preview inspector.
@@ -138,6 +139,89 @@
 - Repository risk history is too small for meaningful hotspot or bug-magnet analysis; current risk is specification breadth and premature scaffolding.
 
 ## Completed Work Log
+
+### 2026-07-19 — Start work cycle 10: manual bounded provider execution
+
+- Files changed: `docs/agent_memory.md`.
+- Baseline: confirmed a clean worktree at commit `ac80ea8`; re-read the tenth-cycle request, current journal, shared run lifecycle, Core run/context-pack repositories and routers, Studio run client/details/actions, and the ten-commit history. No bug-fix magnets or firefighting commits exist; the main integration risk is contract drift across shared types, Core OpenAPI/persistence, and Studio rendering.
+- Execution boundary: add synchronous `POST /api/v1/runs/{run_id}/execute`. It accepts no client-selected context or provider payload. Core resolves the stored run, task, and exact bound immutable manifest, rechecks task/run/pack workspace integrity, then invokes one injected provider adapter.
+- State boundary: replace the unimplemented aspirational run phases with the first real persisted state machine: `queued -> running -> succeeded | failed`. Execution attempts from any non-queued state return a stable RFC 9457 conflict. `startedAt` is recorded on entry to running and `finishedAt` on either terminal outcome.
+- Provider boundary: implement a deterministic built-in adapter with explicit identity, typed request/response models, bounded structured validation, and mapped provider failures. Its request contains task metadata, immutable context-pack evidence, and fixed internal limits only; it receives no workspace path, repository adapter, shell, network credential, or write capability.
+- Result boundary: persist compact provider identity, interpreted task intent, context summary, bounded warnings/recommended next steps, and timing metadata. Provider/validation failures persist a bounded structured failure and a failed terminal run before the API returns RFC 9457 Problem Details.
+- Studio boundary: manually execute queued runs through a TanStack mutation, immediately display running intent/pending state, refetch the authoritative run, and render explicit provider/result/failure sections without raw logs or free-form blobs.
+- Explicitly deferred: external model credentials/calls, configurable prompt assembly, repository reads or writes during execution, code changes/diffs, background workers/brokers, streaming/SSE, cancellation/retry, orchestration graphs, durable persistence, and provider selection UI.
+- Follow-up: define and verify the isolated shared execution contract before implementing Core state mutation and provider behavior.
+
+### 2026-07-19 — Define and verify the run execution v1 shared contract
+
+- Files changed: `packages/shared-types/src/{domain,execution,execution.test,index,state-machine,state-machine.test,context-pack.test}.ts` and `docs/agent_memory.md`.
+- State contract: the actual v1 run lifecycle is now exactly `queued -> running -> succeeded | failed`. The earlier planning/checking/approval names were aspirational shared-only states with no Core behavior; removing them makes the public contract match the first real persisted execution state machine.
+- Execution contract: each run has a nullable `execution` envelope. Once execution begins it records vendor-neutral provider/adapter identity; terminal records add bounded duration plus exactly one structured result or structured failure. Results pin schema version `1` and contain task summary, interpreted intent, immutable context aggregates/languages, warnings, and recommended next steps—never raw logs, prompts, patches, or repository content.
+- Failure contract: terminal failures use the closed codes `provider_execution_failed` and `structured_result_invalid` plus one bounded safe summary. Provider implementation exceptions and schema validation details are not part of the public wire shape.
+- Verification: strict shared TypeScript checking and all 18 tests across six files pass, including exact lifecycle transitions and a representative provider/result envelope.
+- Follow-up: add Core Pydantic execution models, compare-and-set run replacement, typed provider request/output boundaries, deterministic adapter, validation/failure mapping, execute route, and focused API/state tests.
+
+### 2026-07-19 — Prepare the Core manual execution step
+
+- Files changed: `docs/agent_memory.md`.
+- Provider plan: isolate provider identity/request/output behind a protocol. The built-in deterministic review adapter receives a frozen task input and the exact immutable context-pack manifest plus fixed limits; it derives compact intent/context/warnings/next steps without filesystem, Git, subprocess, network, or credential access.
+- Persistence plan: extend the replaceable Core repository with an atomic expected-status run replacement. Core first persists `running` with `startedAt` and adapter identity, then persists either `succeeded` plus validated result or `failed` plus bounded failure and `finishedAt`; this prevents two manual requests from claiming the same queued run.
+- Integrity plan: execution resolves the stored task and manifest, then checks direct binding id, task/workspace ownership, inventory/schema identity, and stored aggregate reference before invoking the provider. Missing bindings and inconsistent persisted ownership are separate stable conflicts.
+- Error plan: non-queued execution, missing binding, inconsistent context, provider failure, and invalid structured output receive dedicated RFC 9457 problems. Provider/output failures still leave a readable failed run record; raw exception or validation details never cross the API.
+- Test plan: cover success, persisted running/terminal transitions and timestamps, repeat/invalid state, missing run, missing bound pack, ownership inconsistency, provider exception, invalid output, compare-and-set behavior, GET persistence, and exact OpenAPI shape.
+- Follow-up: implement the isolated models/adapter/service/repository/router/problems and pass Ruff plus the full warning-strict Core suite.
+
+### 2026-07-19 — Implement and verify Core manual bounded execution
+
+- Files changed: `services/core/src/mensura_core/{models,provider_adapter,repositories,service,main,exceptions}.py`, `services/core/src/mensura_core/api/{problems,routers/runs}.py`, `services/core/tests/{test_api,test_openapi,test_run_execution}.py`, and `docs/agent_memory.md`.
+- Provider abstraction: `ProviderAdapter` exposes immutable provider identity plus a typed `ProviderExecutionRequest -> RunExecutionResult` operation. The request contains the stored Task and exact `ContextPackManifest`; it has no workspace root, repository/Git/filesystem handle, shell, network client, credential, or write method. `create_app` injects the adapter, defaulting to credential-free `DeterministicReviewProvider`.
+- Placeholder behavior: the built-in adapter derives bounded task intent, exact context aggregates/languages, deterministic warnings for absent descriptions/binary metadata/truncated previews, and two review-oriented next steps. It never reads live files or returns preview bodies/raw logs.
+- State/persistence: `InMemoryCoreRepository.replace_run_if_status` provides an atomic expected-state update. Core revalidates task/binding/manifest identity and stored aggregate evidence, claims `queued -> running` with `startedAt` and adapter identity, then writes `succeeded` with result or `failed` with safe failure plus `finishedAt` and bounded duration. A second claim cannot execute the same queued record.
+- API/errors: added bodyless `POST /api/v1/runs/{run_id}/execute`. Missing run remains `404 resource-not-found`; non-queued state, missing bound manifest, and inconsistent ownership/evidence are dedicated `409` problems; provider exceptions and structured-result validation failures are dedicated `502` problems. Failed attempts remain inspectable through GET and never expose raw exception/schema details.
+- Verification: Ruff lint/format pass and all 57 Core tests pass with warnings treated as errors. New tests observe the stored running state inside the provider call; verify exact immutable input/no root path, success/result/timestamps/GET persistence, repeat and missing-run rejection, missing pack, ownership inconsistency, bounded provider failure, invalid-result failure, and exact execute/OpenAPI response schemas.
+- Follow-up: add a typed Studio `executeRun` mutation, render running/terminal provider/result/failure states in reusable run details, refresh after both success and RFC 9457 failure, and cover created-run plus arbitrary-inspector flows.
+
+### 2026-07-19 — Prepare the Studio manual execution step
+
+- Files changed: `docs/agent_memory.md`.
+- Client/query plan: add `CoreClient.executeRun(runId)` with a bodyless POST. Reuse the existing per-run TanStack Query key; on mutation start seed a truthful local running projection only from the known queued run, then replace/refetch from Core on success and always refetch after errors because Core may have persisted a failed terminal record.
+- Component plan: keep execution controls inside reusable `RunDetails` composition so both a just-created run and Run inspector expose the same action. Show the action only for queued runs, a disabled pending/running state while the request is in flight, provider identity/duration, bounded structured result sections, or compact structured failure.
+- UX/error plan: separate immutable input evidence from execution output, keep adapter identity explicit, use status-specific badges and accessible live messages, and show the RFC 9457 action error without hiding the authoritative failed run returned by the follow-up GET.
+- Test plan: cover client method/path/body, queued action, running pending projection, success/result render, failed execution refetch plus Problem Details, terminal no-repeat action, and inspector integration.
+- Follow-up: implement Studio client/components/styles/tests and pass strict Studio checks before documentation and live acceptance.
+
+### 2026-07-19 — Implement and verify Studio manual execution review
+
+- Files changed: `apps/studio/src/api/{coreClient,coreClient.test}.ts`, `apps/studio/src/test/render.tsx`, `apps/studio/src/features/runs/{RunDetails,RunExecutionPanel,RunInspector,RunInspector.test,StartRunAction,StartRunAction.test}.tsx`, `apps/studio/src/{app/App.test,features/tasks/TaskInspector.test,styles.css}`, and `docs/agent_memory.md`.
+- Client/action: `CoreClient.executeRun(runId)` sends a bodyless POST to the encoded v1 execute action. Reusable run details show Execute only for queued records; mutation pending disables the action and visibly presents `running`, while success seeds and refetches the exact run query. Errors also refetch because Core may have persisted a failed terminal record before returning Problem Details.
+- State visibility: just-created and looked-up runs share the same execution panel. Running resources poll once per second until terminal; succeeded/failed resources remove the execute action. The persisted status, started/finished timestamps, immutable context reference, adapter identity/version/model boundary, and duration stay separate from the result body.
+- Result review: the compact terminal view shows bounded task summary/intent, file/text/binary/preview/truncation aggregates, exact context-pack id, detected languages, warnings, and recommended next steps. Failures show both the action-local RFC 9457 problem and the stored safe failure code/summary; no prompts, preview bodies, raw logs, patches, or repository content are rendered.
+- UX correction: queued-run creation copy now says provider execution is a separate manual action rather than claiming that no execution exists. The UI uses accessible live status/error regions, disabled pending actions, terminal color badges, responsive compact grids, and reduced-motion-compatible existing styles.
+- Verification: strict Studio TypeScript checking, all 46 tests across 13 files, and the Vite production build pass. Added coverage verifies the bodyless encoded execute call, pending/running visibility, provider/result rendering, terminal action removal, and RFC 9457 error plus persisted failed-result rendering.
+- Follow-up: update root/Core/Studio READMEs and current-status counts, scan production paths for forbidden live repository/write capabilities, run all workspace/Core/Rust checks, and perform a real Core plus native Studio acceptance flow against the Mensura repository.
+
+### 2026-07-19 — Prepare cycle 10 documentation and acceptance
+
+- Files changed: `docs/agent_memory.md`.
+- Documentation plan: describe the exact execute route, four-state lifecycle, deterministic adapter request/result boundaries, atomic in-memory transitions, safe failure problems, Studio manual action/result review, and the continuing process-local/no-write/no-external-provider limitations in root/Core/Studio READMEs.
+- Automated acceptance plan: run root `pnpm check`, the full warning-strict 57-test Core suite, Ruff lint/format, Rust formatting, `git diff --check`, exact OpenAPI assertions, and production scans for filesystem/Git/subprocess/write/network dependencies reachable from the provider/run-execution slice.
+- Live acceptance plan: start a fresh Core, create a real Mensura workspace/inventory/context pack/task/queued run, execute it, verify POST/GET state/result identity, then launch the native Studio shell and inspect/trigger the same flow if the Tauri runtime is practical. No repository write or external credential will be used.
+- Follow-up: finish documentation, run acceptance, correct any defects, record the final resumable state, and commit the completed vertical slice.
+
+### 2026-07-19 — Complete work cycle 10: manual immutable-context provider execution
+
+- Files changed: 34 files across root/Core/Studio documentation, shared execution/domain/state contracts, Core provider/models/repository/service/router/problems/tests, and Studio client/run components/styles/tests; exact paths are available in the cycle commit/diff.
+- Endpoint delivered: bodyless `POST /api/v1/runs/{run_id}/execute` manually executes only queued runs. Existing create/get endpoints remain unchanged except that Run now exposes nullable `execution` and the real four-state lifecycle.
+- Abstraction delivered: injected `ProviderAdapter` with immutable identity and typed request/result, defaulting to `DeterministicReviewProvider`. Its serialized request contains the stored Task and exact bounded `ContextPackManifest` but no `rootPath`; the adapter receives no filesystem, Git, subprocess, network, credential, repository-write, or provider-selection capability.
+- State/integrity delivered: atomic expected-status replacement persists `queued -> running -> succeeded | failed`; `startedAt`, `finishedAt`, duration, identity, and result/failure are state-validated. Task/run/pack workspace plus id/inventory/schema/aggregate evidence are rechecked before the running claim. Repeat execution, missing packs, and inconsistent bindings never invoke the provider.
+- Output/errors delivered: schema-v1 results contain bounded task intent, context aggregate/languages, at most eight warnings/next steps, and no raw logs/prompts/patches/preview bodies. Provider and result-validation exceptions persist a safe failed record and return dedicated `502` RFC 9457 problems without leaking internals; invalid state/context uses dedicated `409` problems.
+- Studio delivered: created and inspected queued runs expose the same manual action; pending visibly shows running and disables the control; externally observed running records poll until terminal; success/failure refetches server authority; terminal views show provider identity/duration and compact result or safe failure separately from immutable input evidence.
+- Automated verification: root `pnpm check` passes 18 shared tests, 46 Studio tests, strict TypeScript/build, Vite production build, and `cargo check`; Ruff lint/format and all 57 Core tests pass with warnings treated as errors; `cargo fmt --check` and `git diff --check` pass. Focused production audit confirmed the provider/request/shared execution files contain no live repository path or I/O capability, and the Core execute method uses only repository records plus the context-pack store/provider.
+- Native packaging: optimized Tauri `--no-bundle` build succeeded. Full macOS packaging also succeeded, producing `Mensura Studio.app` and `Mensura Studio_0.1.0_aarch64.dmg` from the current UI.
+- Live Core acceptance: fresh Core over `/Users/makedoni/Documents/mensura` built a 154-included/23-excluded inventory, created three-file 7,605-byte pack `sha256:184212c516f45f00be560c200e8be9a0e48dfd516877cf7e4d914c94c4273eb7`, task `88e6217f-acf3-4693-a92a-b3436c816034`, and queued run `a2251f66-7a29-4076-aaeb-1b0aaa98a015`.
+- Native Studio acceptance: the release app reconciled its stale local workspace id, selected the live workspace, showed the exact queued binding and no-write explanation, manually executed the run, removed the action, and rendered `succeeded`, `mensura.builtin / deterministic-review v1.0.0`, no model, exact digest/3 files/7,605 bytes, Markdown/Python/TypeScript, no warnings, and two bounded next steps. Final Core GET matched the UI; Studio and Core shut down cleanly.
+- Intentionally deferred: external model/provider SDKs and credentials, prompt assembly/versioning, provider choice UI, repository changes/diffs, write isolation, worker/broker, streaming/SSE, cancellation/retry, orchestration, durable history, authentication, and CI/Compose infrastructure.
+- Next recommended vertical slice: add one optional real BYOK model adapter plus explicit local credential/config boundary and one small versioned prompt/request mapping, while preserving the same immutable input, no-repository-write capability boundary, four-state lifecycle, bounded result schema, and deterministic adapter as the credential-free fallback.
 
 ### 2026-07-19 — Start work cycle 9: bind immutable context packs to queued runs
 
@@ -728,22 +812,25 @@
 - Task lifecycle rules that require review before approval and support revision/retry paths.
 - Run lifecycle rules that require checking and an approval checkpoint before completion.
 - Runtime plugin manifest validation for supported types and permissions, semantic versions, duplicate permissions, and unsafe entry paths.
-- Automated coverage for shared lifecycle, plugin validation, Guard, Vault, and context-pack wire-contract behavior (16 passing tests).
-- Python 3.12 FastAPI Core service with enabled OpenAPI and seventeen implemented HTTP operations across fourteen paths.
+- Automated coverage for shared lifecycle, plugin validation, Guard, Vault, context-pack, and provider-execution wire-contract behavior (18 passing tests).
+- Python 3.12 FastAPI Core service with enabled OpenAPI and eighteen implemented HTTP operations across fifteen paths.
 - Workspace creation/listing with exact-root conflict detection in a process-local repository.
 - Task creation/retrieval tied to an existing workspace; created tasks begin in `ready` status.
-- Context-bound run creation/retrieval; every created run requires and stores an immutable same-workspace context pack, remains `queued`, and performs no orchestration or side effects.
+- Context-bound run creation/retrieval; every created run requires and stores an immutable same-workspace context pack and starts `queued`.
+- Manually triggered bodyless run execution with an atomic `queued -> running -> succeeded | failed` state machine, persisted transition timestamps, adapter identity, bounded duration, and validated structured result/failure.
+- Replaceable `ProviderAdapter` boundary plus credential-free deterministic implementation that receives only persisted task metadata and the exact immutable context-pack manifest, with no live workspace path, repository/filesystem/Git/subprocess/network capability, or write operation.
 - RFC 9457 `application/problem+json` responses for resource misses, conflicts, request validation, framework HTTP errors, and generic internal failures.
 - CamelCase JSON contracts aligned with TypeScript Workspace/Task ownership and documented in OpenAPI.
-- Fifty-one passing Core service/runner/API/OpenAPI/Git/Vault/context-pack/run-binding tests plus successful real-Uvicorn repository inspection, Guard execution, inventory, filtering, preview retrieval, immutable pack creation/get/list, and bound run POST/GET.
+- Fifty-seven passing Core service/runner/API/OpenAPI/Git/Vault/context-pack/run-execution tests plus successful real-Uvicorn repository inspection, Guard execution, inventory, filtering, preview retrieval, immutable pack creation/get/list, bound run creation, and manual structured execution.
 - Tauri 2 desktop Studio with React 19, Vite 8, a single resizable window, desktop app icons, CSP, and a local-Core-only native HTTP capability.
 - TanStack Query-backed Core health polling, workspace list/create behavior, task lookup, and run lookup with explicit loading, empty, success, connection-error, and RFC 9457 error states.
 - Shared Health, workspace transport, and Problem Details contracts aligned with Core's camelCase responses and nullable fields.
-- Forty-three passing Studio client/component/acceptance tests and successful native release binary, macOS `.app`, and DMG builds.
+- Forty-six passing Studio client/component/acceptance tests and successful native release binary, macOS `.app`, and DMG builds.
 - Verified live desktop connectivity from the release Tauri WebView to Core health and workspace endpoints.
 - Persisted active workspace selection with stale-ID reconciliation after Core restart.
 - Accessible active-workspace task creation with client validation, RFC 9457 failures, value preservation on failure, and immediate ready-task details.
 - Reusable queued-run creation from both created and looked-up tasks, with explicit immutable pack selection, task/run query refresh, and immediate bound-run details.
+- Reusable manual Execute action for created and looked-up queued runs, visible pending/running state, terminal polling, provider identity, compact structured result/failure review, and RFC 9457 plus persisted-failure reconciliation.
 - Verified live Core and native Studio workspace -> Vault inventory -> immutable context pack -> ready task -> context-bound queued run POST/GET sequence.
 - Isolated shared repository summary/diff-metadata contracts with no patch or file-content fields.
 - Replaceable read-only `GitRepositoryAdapter` with a GitPython implementation for branch, detached HEAD, clean/dirty, staged/unstaged/untracked counts, and safe changed-path metadata.
@@ -769,8 +856,8 @@
 
 ### MVP
 
-1. Implement one manually triggered, no-repository-write provider execution step that consumes only the persisted immutable run context, uses explicit provider/prompt adapters, records bounded structured results/errors, and exposes status in Studio.
-2. Extend that observable flow from reviewed context -> isolated change proposal/safe diff metadata -> Guard -> review -> approve/reject without bypassing the immutable binding.
+1. Add one optional real BYOK model provider behind the existing adapter, with explicit local credential/config handling and one small versioned prompt/request mapping, while preserving the same immutable input and bounded no-write result contract.
+2. Extend that observable flow from reviewed context -> write-isolated change proposal/safe diff metadata -> Guard -> review -> approve/reject without bypassing the immutable binding.
 3. Add Docker Compose only for dependencies required by the working flow, plus CI for format, typecheck, tests, and builds.
 4. Replace temporary in-memory adapters with durable storage where acceptance criteria require restart-safe history.
 
@@ -887,7 +974,14 @@
 - Decision: require one valid `contextPackId` for every new run, store that direct digest with a compact immutable summary, and reject task/pack workspace mismatch before persistence.
 - Reason: execution must be tied to the exact human-reviewable evidence already captured, not to mutable paths, a client-reported summary, or a provider-specific payload. A direct id is the durable semantic binding; the compact stored reference keeps run inspection useful without needing to reconstruct or embed the manifest.
 - Alternatives considered: nullable bindings for legacy clients, silently choosing the newest pack, accepting file paths during run creation, storing only a digest with no readable evidence, and copying the complete manifest into each run. Rejected because they permit unreviewed ambiguity, duplicate mutable selection, weaken inspection, or duplicate large evidence bodies.
-- Consequences: bodyless pre-cycle clients intentionally fail v1 validation; Studio must explicitly select a pack owned by the task workspace; Core uses one injected immutable repository for creation and validation; queued runs remain inert; both packs and runs still disappear on restart; provider/prompt execution must consume the persisted binding rather than accept a replacement selection.
+- Consequences: bodyless pre-cycle clients intentionally fail v1 validation; Studio must explicitly select a pack owned by the task workspace; Core uses one injected immutable repository for creation and validation; both packs and runs still disappear on restart; manual provider execution now consumes the persisted binding and never accepts a replacement selection.
+
+### Manual bounded provider execution
+
+- Decision: make the first execution action synchronous and explicit, isolate it behind `ProviderAdapter`, use atomic expected-state run replacement, and ship a deterministic credential-free adapter that consumes only the persisted Task and exact immutable `ContextPackManifest`.
+- Reason: the run/context integrity, state transitions, error semantics, result validation, and review UI must be proven before external credentials, model variability, prompt assets, background infrastructure, or repository mutation obscure the boundary. Passing no Workspace/root/filesystem capability makes the no-live-repository guarantee structural rather than advisory.
+- Alternatives considered: direct vendor SDK calls inside `CoreService`, client-selected provider/context payloads, arbitrary free-form text output, optimistic terminal state, a Celery/Redis worker, repository rereads, and a fake code-change generator. Rejected or deferred because they couple contracts to one vendor, bypass stored evidence, weaken validation, add infrastructure before observable events exist, or create misleading/unreviewable write behavior.
+- Consequences: the public lifecycle is now exactly `queued -> running -> succeeded | failed`; only queued runs execute; provider identity and bounded result/failure survive GET for the Core process lifetime; provider/result errors return safe `502` problems after persisting failure; synchronous deterministic execution is not a useful coding model and has no retry/cancel/streaming; a future real adapter must preserve the same immutable request and validated result boundary.
 
 ## Open Questions
 

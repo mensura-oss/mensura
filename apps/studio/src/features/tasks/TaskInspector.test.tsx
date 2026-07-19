@@ -65,6 +65,7 @@ describe("TaskInspector", () => {
         totalPreviewBytes: 512,
       },
       status: "queued" as const,
+      execution: null,
       startedAt: null,
       finishedAt: null,
       createdAt: "2026-07-19T12:05:00Z",

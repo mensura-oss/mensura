@@ -14,6 +14,10 @@ from mensura_core.guard_config import GuardConfigurationLoader, JsonGuardConfigu
 from mensura_core.guard_repositories import GuardRunRepository, InMemoryGuardRunRepository
 from mensura_core.guard_runner import GuardCommandRunner, SubprocessGuardCommandRunner
 from mensura_core.guard_service import GuardService
+from mensura_core.provider_adapter import (
+    DeterministicReviewProvider,
+    ProviderAdapter,
+)
 from mensura_core.repositories import CoreRepository, InMemoryCoreRepository
 from mensura_core.service import CoreService
 from mensura_core.vault_inventory import LocalVaultInventoryBuilder, VaultInventoryBuilder
@@ -33,6 +37,7 @@ def create_app(
     vault_inventory_builder: VaultInventoryBuilder | None = None,
     vault_inventory_repository: VaultInventoryRepository | None = None,
     context_pack_repository: ContextPackRepository | None = None,
+    provider: ProviderAdapter | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Mensura Core API",
@@ -47,6 +52,7 @@ def create_app(
         core_repository,
         git_repository or GitPythonRepositoryAdapter(),
         immutable_context_pack_repository,
+        provider or DeterministicReviewProvider(),
     )
     app.state.guard_service = GuardService(
         core_repository,

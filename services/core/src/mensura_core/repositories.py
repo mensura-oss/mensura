@@ -3,7 +3,7 @@ from threading import RLock
 from typing import Protocol
 from uuid import UUID
 
-from mensura_core.models import Run, Task, Workspace
+from mensura_core.models import Run, RunStatus, Task, Workspace
 
 
 class DuplicateWorkspaceRootError(Exception):
@@ -24,6 +24,8 @@ class CoreRepository(Protocol):
     def get_run(self, run_id: UUID) -> Run | None: ...
 
     def add_run(self, run: Run) -> None: ...
+
+    def replace_run_if_status(self, run: Run, expected_status: RunStatus) -> bool: ...
 
 
 class InMemoryCoreRepository:
@@ -68,3 +70,11 @@ class InMemoryCoreRepository:
     def add_run(self, run: Run) -> None:
         with self._lock:
             self._runs[run.id] = run
+
+    def replace_run_if_status(self, run: Run, expected_status: RunStatus) -> bool:
+        with self._lock:
+            current = self._runs.get(run.id)
+            if current is None or current.status is not expected_status:
+                return False
+            self._runs[run.id] = run
+            return True

@@ -2,6 +2,7 @@ import type {
   ContextPackDigest,
   ContextPackReference,
 } from "./context-pack.js";
+import type { RunExecution } from "./execution.js";
 
 export type EntityId = string;
 export type IsoDateTime = string;
@@ -56,13 +57,9 @@ export interface Task {
 
 export const RUN_STATUSES = [
   "queued",
-  "planning",
-  "executing",
-  "checking",
-  "awaiting_approval",
-  "completed",
+  "running",
+  "succeeded",
   "failed",
-  "cancelled",
 ] as const;
 
 export type RunStatus = (typeof RUN_STATUSES)[number];
@@ -73,6 +70,7 @@ export interface Run {
   contextPackId: ContextPackDigest;
   contextPack: ContextPackReference;
   status: RunStatus;
+  execution: RunExecution | null;
   startedAt?: IsoDateTime | null;
   finishedAt?: IsoDateTime | null;
   createdAt: IsoDateTime;

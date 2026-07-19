@@ -27,20 +27,18 @@ describe("task lifecycle", () => {
 });
 
 describe("run lifecycle", () => {
-  it("requires checks and approval before completion", () => {
-    expect(canTransitionRun("executing", "checking")).toBe(true);
-    expect(canTransitionRun("checking", "awaiting_approval")).toBe(true);
-    expect(canTransitionRun("awaiting_approval", "completed")).toBe(true);
-    expect(canTransitionRun("executing", "completed")).toBe(false);
+  it("allows only explicit execution transitions", () => {
+    expect(canTransitionRun("queued", "running")).toBe(true);
+    expect(canTransitionRun("running", "succeeded")).toBe(true);
+    expect(canTransitionRun("running", "failed")).toBe(true);
+    expect(canTransitionRun("queued", "succeeded")).toBe(false);
+    expect(canTransitionRun("succeeded", "running")).toBe(false);
   });
 
-  it("supports revision from the approval checkpoint", () => {
-    expect(canTransitionRun("awaiting_approval", "executing")).toBe(true);
-  });
-
-  it("treats completed, failed, and cancelled runs as terminal", () => {
-    expect(isTerminalRunStatus("completed")).toBe(true);
+  it("treats succeeded and failed runs as terminal", () => {
+    expect(isTerminalRunStatus("succeeded")).toBe(true);
     expect(isTerminalRunStatus("failed")).toBe(true);
-    expect(isTerminalRunStatus("cancelled")).toBe(true);
+    expect(isTerminalRunStatus("queued")).toBe(false);
+    expect(isTerminalRunStatus("running")).toBe(false);
   });
 });

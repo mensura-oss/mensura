@@ -149,3 +149,39 @@ class ContextPackWorkspaceMismatchError(ContextPackError):
             f"Task '{task_id}' belongs to workspace '{task_workspace_id}', but context pack "
             f"'{context_pack_id}' belongs to workspace '{context_pack_workspace_id}'."
         )
+
+
+class RunExecutionError(CoreError):
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)
+
+
+class RunInvalidStateError(RunExecutionError):
+    def __init__(self, run_id: UUID, status: str) -> None:
+        super().__init__(f"Run '{run_id}' cannot execute from status '{status}'.")
+
+
+class RunContextPackMissingError(RunExecutionError):
+    def __init__(self, run_id: UUID, context_pack_id: str) -> None:
+        super().__init__(
+            f"Run '{run_id}' is bound to context pack '{context_pack_id}', but that immutable "
+            "pack is no longer retrievable."
+        )
+
+
+class RunContextInconsistentError(RunExecutionError):
+    def __init__(self, run_id: UUID) -> None:
+        super().__init__(
+            f"Run '{run_id}' has an inconsistent task or immutable context-pack binding."
+        )
+
+
+class ProviderExecutionFailedError(RunExecutionError):
+    def __init__(self, run_id: UUID) -> None:
+        super().__init__(f"Provider execution failed for run '{run_id}'.")
+
+
+class StructuredResultInvalidError(RunExecutionError):
+    def __init__(self, run_id: UUID) -> None:
+        super().__init__(f"Provider returned an invalid structured result for run '{run_id}'.")

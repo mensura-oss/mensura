@@ -2,18 +2,31 @@ from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+from pydantic import ValidationError
+
+from mensura_core.context_pack_models import ContextPackManifest
 from mensura_core.context_pack_repositories import ContextPackRepository
 from mensura_core.exceptions import (
     ContextPackNotFoundError,
     ContextPackWorkspaceMismatchError,
+    ProviderExecutionFailedError,
     ResourceConflictError,
     ResourceNotFoundError,
+    RunContextInconsistentError,
+    RunContextPackMissingError,
+    RunInvalidStateError,
+    StructuredResultInvalidError,
 )
 from mensura_core.git_adapter import GitRepositoryAdapter
 from mensura_core.models import (
     Run,
     RunContextPackReference,
     RunCreate,
+    RunExecution,
+    RunExecutionFailure,
+    RunExecutionFailureCode,
+    RunExecutionResult,
+    RunProviderMetadata,
     RunStatus,
     Task,
     TaskCreate,
@@ -22,6 +35,7 @@ from mensura_core.models import (
     WorkspaceCreate,
     ensure_utc_timestamp,
 )
+from mensura_core.provider_adapter import ProviderAdapter, ProviderExecutionRequest
 from mensura_core.repositories import CoreRepository, DuplicateWorkspaceRootError
 from mensura_core.repository_models import RepositorySummary
 
@@ -41,6 +55,7 @@ class CoreService:
         repository: CoreRepository,
         git_repository: GitRepositoryAdapter,
         context_pack_repository: ContextPackRepository,
+        provider: ProviderAdapter,
         *,
         id_factory: IdFactory = uuid4,
         clock: Clock = utc_now,
@@ -48,6 +63,7 @@ class CoreService:
         self._repository = repository
         self._git_repository = git_repository
         self._context_pack_repository = context_pack_repository
+        self._provider = provider
         self._id_factory = id_factory
         self._clock = clock
 
@@ -141,6 +157,132 @@ class CoreService:
         if run is None:
             raise ResourceNotFoundError("Run", run_id)
         return run
+
+    def execute_run(self, run_id: UUID) -> Run:
+        run = self.get_run(run_id)
+        if run.status is not RunStatus.QUEUED:
+            raise RunInvalidStateError(run.id, run.status)
+
+        task = self.get_task(run.task_id)
+        self._validate_stored_binding(run, task)
+        context_pack = self._context_pack_repository.get(task.workspace_id, run.context_pack_id)
+        if context_pack is None:
+            raise RunContextPackMissingError(run.id, run.context_pack_id)
+        if not self._binding_matches_manifest(run, context_pack):
+            raise RunContextInconsistentError(run.id)
+
+        started_at = ensure_utc_timestamp(self._clock())
+        running = Run.model_validate(
+            {
+                **run.model_dump(by_alias=False),
+                "status": RunStatus.RUNNING,
+                "execution": RunExecution(provider=self._provider.identity),
+                "started_at": started_at,
+                "updated_at": started_at,
+            }
+        )
+        if not self._repository.replace_run_if_status(running, RunStatus.QUEUED):
+            current = self.get_run(run.id)
+            raise RunInvalidStateError(current.id, current.status)
+
+        request = ProviderExecutionRequest(task=task, context_pack=context_pack)
+        try:
+            raw_result = self._provider.execute(request)
+        except Exception as error:
+            self._finish_failed_run(
+                running,
+                RunExecutionFailureCode.PROVIDER_EXECUTION_FAILED,
+                "The provider adapter could not complete this execution.",
+            )
+            raise ProviderExecutionFailedError(run.id) from error
+
+        try:
+            result = RunExecutionResult.model_validate(raw_result)
+        except (ValidationError, TypeError, ValueError) as error:
+            self._finish_failed_run(
+                running,
+                RunExecutionFailureCode.STRUCTURED_RESULT_INVALID,
+                "The provider returned output that did not satisfy the execution schema.",
+            )
+            raise StructuredResultInvalidError(run.id) from error
+
+        finished_at, duration_ms = self._finished_timing(started_at)
+        succeeded = Run.model_validate(
+            {
+                **running.model_dump(by_alias=False),
+                "status": RunStatus.SUCCEEDED,
+                "execution": RunExecution(
+                    provider=self._running_provider(running),
+                    duration_ms=duration_ms,
+                    result=result,
+                ),
+                "finished_at": finished_at,
+                "updated_at": finished_at,
+            }
+        )
+        if not self._repository.replace_run_if_status(succeeded, RunStatus.RUNNING):
+            raise RuntimeError(f"Run '{run.id}' left running state during provider execution.")
+        return succeeded
+
+    @staticmethod
+    def _validate_stored_binding(run: Run, task: Task) -> None:
+        if (
+            run.task_id != task.id
+            or run.context_pack_id != run.context_pack.id
+            or task.workspace_id != run.context_pack.workspace_id
+        ):
+            raise RunContextInconsistentError(run.id)
+
+    @staticmethod
+    def _binding_matches_manifest(run: Run, context_pack: ContextPackManifest) -> bool:
+        summary = context_pack.summary
+        reference = run.context_pack
+        return (
+            context_pack.id == run.context_pack_id
+            and context_pack.workspace_id == reference.workspace_id
+            and context_pack.inventory_id == reference.inventory_id
+            and context_pack.schema_version == reference.schema_version
+            and summary.file_count == reference.file_count
+            and summary.total_file_bytes == reference.total_file_bytes
+            and summary.total_preview_bytes == reference.total_preview_bytes
+        )
+
+    def _finish_failed_run(
+        self,
+        running: Run,
+        code: RunExecutionFailureCode,
+        summary: str,
+    ) -> None:
+        if running.started_at is None:
+            raise RuntimeError("A running run must have startedAt.")
+        finished_at, duration_ms = self._finished_timing(running.started_at)
+        failed = Run.model_validate(
+            {
+                **running.model_dump(by_alias=False),
+                "status": RunStatus.FAILED,
+                "execution": RunExecution(
+                    provider=self._running_provider(running),
+                    duration_ms=duration_ms,
+                    failure=RunExecutionFailure(code=code, summary=summary),
+                ),
+                "finished_at": finished_at,
+                "updated_at": finished_at,
+            }
+        )
+        if not self._repository.replace_run_if_status(failed, RunStatus.RUNNING):
+            raise RuntimeError(f"Run '{running.id}' left running state during provider execution.")
+
+    @staticmethod
+    def _running_provider(running: Run) -> RunProviderMetadata:
+        if running.execution is None:
+            raise RuntimeError("A running run must have provider identity.")
+        return running.execution.provider
+
+    def _finished_timing(self, started_at: datetime) -> tuple[datetime, int]:
+        observed = ensure_utc_timestamp(self._clock())
+        finished_at = max(started_at, observed)
+        duration_ms = int((finished_at - started_at).total_seconds() * 1000)
+        return finished_at, min(duration_ms, 86_400_000)
 
     def _require_workspace(self, workspace_id: UUID) -> Workspace:
         workspace = self._repository.get_workspace(workspace_id)

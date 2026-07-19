@@ -1,6 +1,7 @@
 export * from "./api.js";
 export * from "./context-pack.js";
 export * from "./domain.js";
+export * from "./execution.js";
 export * from "./guard.js";
 export * from "./plugin.js";
 export * from "./repository.js";

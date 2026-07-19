@@ -58,6 +58,7 @@ const run: Run = {
     totalPreviewBytes: 128,
   },
   status: "queued",
+  execution: null,
   startedAt: null,
   finishedAt: null,
   createdAt: "2026-07-19T12:05:00Z",

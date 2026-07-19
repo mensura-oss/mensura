@@ -17,6 +17,8 @@ export function RunInspector() {
     queryFn: () => client.getRun(runId),
     enabled: runId.length > 0,
     retry: false,
+    refetchInterval: (query) =>
+      query.state.data?.status === "running" ? 1_000 : false,
   });
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {

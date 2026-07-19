@@ -4,11 +4,13 @@ import {
   formatTimestamp,
   ResourceDetails,
 } from "../../components/ResourceDetails";
+import { RunExecutionPanel } from "./RunExecutionPanel";
 
 export function RunDetails({ run }: { run: Run }) {
   return (
-    <ResourceDetails
-      items={[
+    <div className="run-details">
+      <ResourceDetails
+        items={[
         { label: "ID", value: <code>{run.id}</code> },
         { label: "Task", value: <code>{run.taskId}</code> },
         {
@@ -39,12 +41,19 @@ export function RunDetails({ run }: { run: Run }) {
           label: "Captured preview bytes",
           value: run.contextPack.totalPreviewBytes.toLocaleString(),
         },
-        { label: "Status", value: <span className="badge">{run.status}</span> },
+        {
+          label: "Status",
+          value: (
+            <span className={`badge badge--${run.status}`}>{run.status}</span>
+          ),
+        },
         { label: "Started", value: formatTimestamp(run.startedAt) },
         { label: "Finished", value: formatTimestamp(run.finishedAt) },
         { label: "Created", value: formatTimestamp(run.createdAt) },
         { label: "Updated", value: formatTimestamp(run.updatedAt) },
-      ]}
-    />
+        ]}
+      />
+      <RunExecutionPanel key={run.id} run={run} />
+    </div>
   );
 }

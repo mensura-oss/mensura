@@ -16,6 +16,7 @@ export function createTestClient(
     createRun: () => Promise.reject(new Error("Not implemented in test")),
     createTask: () => Promise.reject(new Error("Not implemented in test")),
     createWorkspace: () => Promise.reject(new Error("Not implemented in test")),
+    executeRun: () => Promise.reject(new Error("Not implemented in test")),
     getHealth: () => Promise.reject(new Error("Not implemented in test")),
     getContextPack: () => Promise.reject(new Error("Not implemented in test")),
     getLatestGuardRun: () => Promise.reject(new Error("Not implemented in test")),

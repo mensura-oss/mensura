@@ -2,13 +2,13 @@
 
 Mensura is an open-source, local-first and self-hostable agentic development platform. It is intended to combine a desktop developer workspace, controlled agent execution, durable project memory, mandatory quality gates, and an open plugin ecosystem.
 
-The repository is at the foundation stage. The current runnable components are `@mensura/shared-types`, the minimal Python 3.12 Mensura Core HTTP API, and the Tauri/React Mensura Studio shell. Studio can select a workspace, inspect its local Git status, build a deterministic Vault file inventory with bounded text previews, select inventoried files into an immutable context pack, manually run configured Ruff/pytest Guard checks, create a ready task, and create a queued run bound to one reviewed immutable context pack. Repository and Vault access are read-only. Core still stores workspace/task/run/Guard/Vault/context-pack resources only in process memory; it does not execute providers, orchestrate agents, or persist data across restarts.
+The repository is at the foundation stage. The current runnable components are `@mensura/shared-types`, the minimal Python 3.12 Mensura Core HTTP API, and the Tauri/React Mensura Studio shell. Studio can select a workspace, inspect its local Git status, build a deterministic Vault file inventory with bounded text previews, select inventoried files into an immutable context pack, manually run configured Ruff/pytest Guard checks, create a ready task, create a context-bound queued run, and manually execute that run through a credential-free deterministic provider adapter. Execution records explicit `queued -> running -> succeeded | failed` state, adapter identity, timestamps, and bounded structured output. Repository and Vault access remain read-only, and provider execution receives only the persisted task plus immutable pack—not the live workspace path. Core still stores all resources only in process memory; it does not call an external model, modify code, orchestrate agents, or persist data across restarts.
 
 ## Repository map
 
 - `packages/shared-types`: shared domain contracts, state machines, and runtime plugin manifest validation.
 - `apps/studio`: Tauri 2/React desktop shell and typed Core client.
-- `services/core`: versioned FastAPI resource contracts, RFC 9457 errors, read-only Git/Vault adapters, immutable context-pack assembly, bounded Guard runner, in-memory resource storage, and API tests.
+- `services/core`: versioned FastAPI resource contracts, RFC 9457 errors, read-only Git/Vault adapters, immutable context-pack assembly, bounded Guard runner, manual provider adapter execution, in-memory resource storage, and API tests.
 - `docs/agent_memory.md`: current architecture, audit, implementation journal, decisions, and ordered next tasks.
 - `mensura_*.md`: product, architecture, API, module, roadmap, and setup source specifications.
 - `LICENSE`: GNU AGPL v3.

@@ -114,6 +114,7 @@ def test_create_get_task_and_create_get_run(client: TestClient, tmp_path: Path) 
         "totalPreviewBytes": context_pack["summary"]["totalPreviewBytes"],
     }
     assert run["status"] == "queued"
+    assert run["execution"] is None
     assert run["startedAt"] is None
     assert run["finishedAt"] is None
     assert run_response.headers["location"] == f"/api/v1/runs/{run['id']}"

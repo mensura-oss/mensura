@@ -12,14 +12,10 @@ const taskTransitions = {
 } as const satisfies Record<TaskStatus, readonly TaskStatus[]>;
 
 const runTransitions = {
-  queued: ["planning", "cancelled"],
-  planning: ["executing", "failed", "cancelled"],
-  executing: ["checking", "failed", "cancelled"],
-  checking: ["awaiting_approval", "failed", "cancelled"],
-  awaiting_approval: ["completed", "executing", "cancelled"],
-  completed: [],
+  queued: ["running"],
+  running: ["succeeded", "failed"],
+  succeeded: [],
   failed: [],
-  cancelled: [],
 } as const satisfies Record<RunStatus, readonly RunStatus[]>;
 
 export function canTransitionTask(from: TaskStatus, to: TaskStatus): boolean {
