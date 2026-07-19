@@ -2,24 +2,25 @@
 
 Mensura is an open-source, local-first and self-hostable agentic development platform. It is intended to combine a desktop developer workspace, controlled agent execution, durable project memory, mandatory quality gates, and an open plugin ecosystem.
 
-The repository is at the foundation stage. The current runnable components are `@mensura/shared-types` and the minimal Python 3.12 Mensura Core HTTP API. Core currently stores workspaces, tasks, and queued placeholder runs in process memory; it does not orchestrate agents or persist data across restarts.
+The repository is at the foundation stage. The current runnable components are `@mensura/shared-types`, the minimal Python 3.12 Mensura Core HTTP API, and the Tauri/React Mensura Studio shell. Core currently stores workspaces, tasks, and queued placeholder runs in process memory; it does not orchestrate agents or persist data across restarts.
 
 ## Repository map
 
 - `packages/shared-types`: shared domain contracts, state machines, and runtime plugin manifest validation.
+- `apps/studio`: Tauri 2/React desktop shell and typed Core client.
 - `services/core`: versioned FastAPI resource contracts, RFC 9457 errors, in-memory repositories, and API tests.
 - `docs/agent_memory.md`: current architecture, audit, implementation journal, decisions, and ordered next tasks.
 - `mensura_*.md`: product, architecture, API, module, roadmap, and setup source specifications.
 - `LICENSE`: GNU AGPL v3.
 
-Target directories such as `apps/studio` and `services/core` will be added when they contain runnable code. See `mensura_monorepo_structure.md` for the intended full layout.
+Runtime directories are added only when they contain runnable code. See `mensura_monorepo_structure.md` for the intended full layout.
 
 ## Prerequisites
 
 - Node.js 22 or newer.
 - pnpm 11 or newer.
-
-The future Core service additionally requires Python 3.12+, and Studio will require the Rust toolchain and Tauri platform prerequisites.
+- Rust 1.77.2 or newer plus Tauri platform prerequisites.
+- Python 3.12 or newer for Core.
 
 ## Start here
 
@@ -28,7 +29,20 @@ pnpm install
 pnpm check
 ```
 
-`pnpm check` typechecks, tests, and builds the JavaScript workspace. Core has a separate Python 3.12 environment and check documented in `services/core/README.md`.
+`pnpm check` typechecks, tests, and builds the JavaScript workspace, then checks the Studio Rust shell. Core has a separate Python 3.12 environment and check documented in `services/core/README.md`.
+
+To run the current local slice, start Core and Studio in separate terminals:
+
+```sh
+cd services/core
+.venv/bin/python -m uvicorn mensura_core.main:app --reload
+```
+
+```sh
+pnpm studio:dev
+```
+
+See `apps/studio/README.md` for desktop configuration and native builds.
 
 ## Working principles
 

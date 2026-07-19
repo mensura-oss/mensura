@@ -44,7 +44,7 @@ export interface Task {
   title: string;
   description: string;
   status: TaskStatus;
-  assignedRole?: AgentRole;
+  assignedRole?: AgentRole | null;
   createdAt: IsoDateTime;
   updatedAt: IsoDateTime;
 }
@@ -66,8 +66,8 @@ export interface Run {
   id: EntityId;
   taskId: EntityId;
   status: RunStatus;
-  startedAt?: IsoDateTime;
-  finishedAt?: IsoDateTime;
+  startedAt?: IsoDateTime | null;
+  finishedAt?: IsoDateTime | null;
   createdAt: IsoDateTime;
   updatedAt: IsoDateTime;
 }

@@ -5,7 +5,7 @@
 - Mensura is an AGPL-3.0 open-source, local-first and self-hostable agentic development platform for professional developers and teams.
 - It combines a desktop workspace (Studio), orchestration (Core), project memory (Vault), quality and policy gates (Guard), extensions (Hub), and optional voice control (Voice).
 - The product emphasizes reproducible agent runs, visible diffs and logs, human approval, mandatory checks, open MCP interoperability, and user-managed model providers.
-- Current implementation status: the repository has a runnable pnpm workspace, a tested shared-contracts package, and a verified minimal Mensura Core FastAPI service. Studio, persistence, and agent execution remain unimplemented.
+- Current implementation status: the repository has a runnable pnpm workspace, tested shared contracts, a verified minimal Mensura Core FastAPI service, and a verified Tauri/React Studio shell connected to Core. Persistence and agent execution remain unimplemented.
 
 ## Source Documents Read
 
@@ -124,7 +124,7 @@
 
 ## Current Status
 
-- Work cycle 2 implementation and verification are complete; the logical Git commit is pending.
+- Work cycle 3 implementation and verification are complete; its logical Git commit is pending.
 - Core v1 is verified under Python 3.12 with versioned resource routes, predictable errors, replaceable in-memory storage, OpenAPI, and tests. Orchestration and database integration remain explicitly deferred.
 - Git history: the initial license commit plus the committed foundation from work cycle 1; no product implementation history is deep enough for meaningful code hotspots yet.
 - Documentation: ten project specifications, the root README, and this execution journal are tracked.
@@ -135,6 +135,56 @@
 - Repository risk history is too small for meaningful hotspot or bug-magnet analysis; current risk is specification breadth and premature scaffolding.
 
 ## Completed Work Log
+
+### 2026-07-19 14:55 MSK — Start work cycle 3: minimal Studio shell
+
+- Files changed: `docs/agent_memory.md`.
+- Audit: re-read the project journal, Studio architecture references, shared TypeScript contracts, Core HTTP models/README, root workspace scripts, and current git history. Node 22.23.1, pnpm 11.13.1, and Rust 1.97.1 are available; the repository is clean and ahead of `origin/main` by the two completed cycle commits.
+- Planned: add one `apps/studio` package with a Vite/React frontend and Tauri 2 Rust shell; add a typed Core client, narrowly scoped native HTTP capability, TanStack Query provider, static shell layout, and health/workspace/task/run panels; then verify tests, production frontend build, native Rust/Tauri build, and a live Core integration path.
+- Contract decisions before implementation: default Core URL is `http://127.0.0.1:8000` with a `VITE_MENSURA_CORE_URL` override; Studio will use Tauri's scoped native HTTP client inside the desktop runtime and standard `fetch` in browser/test contexts; RFC 9457 problems are preserved as a typed `CoreApiError`; resource and problem transport types belong in `@mensura/shared-types` rather than duplicated feature-local interfaces.
+- Explicitly deferred: Monaco, terminals, repository tree, task creation, run creation/events, Kanban, Vault/Guard/Hub/plugin UI, settings screens, routing, authentication, and any global state store beyond TanStack Query's server cache.
+- Follow-up: scaffold and wire the package without adding feature implementation yet, then record the runnable scaffold result before building the API/UI slice.
+
+### 2026-07-19 — Establish the runnable Studio scaffold
+
+- Files changed: `apps/studio/package.json`, `apps/studio/index.html`, `apps/studio/tsconfig.json`, `apps/studio/vite.config.ts`, `apps/studio/vitest.config.ts`, `apps/studio/src/**`, `apps/studio/src-tauri/**`, root `package.json`, `pnpm-lock.yaml`, and `docs/agent_memory.md`.
+- Implemented: a workspace-owned React 19/Vite 8 entry point; a Tauri 2 Rust binary/library shell; production frontend distribution wiring; a single resizable desktop window; a content security policy; a narrowly scoped HTTP capability limited to local Core URLs; root `studio:dev` and `studio:build` commands; and locked npm/Cargo dependencies.
+- Issue resolved: Vitest 3 and Vite 8 provided incompatible Vite plugin types under strict TypeScript. Both root and Studio test tooling now use Vitest 4, whose declared peer range includes Vite 8.
+- Verification: Studio TypeScript checking passed, Vite production build completed, and `cargo check --manifest-path apps/studio/src-tauri/Cargo.toml` compiled the native shell and Tauri HTTP plugin successfully.
+- Current limitation: the rendered React app is still a bootstrap placeholder. Core client behavior and the required health/workspace/task/run panels have not yet been implemented or claimed working.
+- Follow-up: add shared API transport types and the modular Core client/query/UI slice, then record its test status before expanding documentation or attempting native end-to-end validation.
+
+### 2026-07-19 — Implement the unverified Studio Core UI slice
+
+- Files changed: `packages/shared-types/src/api.ts`, `packages/shared-types/src/domain.ts`, `packages/shared-types/src/index.ts`, and `apps/studio/src/{api,app,components,features,layout}/**` plus `apps/studio/src/main.tsx` and `styles.css`.
+- Shared contracts: added Health, workspace collection/create, and RFC 9457 Problem Details transport types; aligned nullable Task role and Run timestamps with the actual Pydantic response schema.
+- Client boundary: added a configurable typed Core client with URL normalization, encoded resource IDs, JSON request handling, native Tauri/browser transport selection, RFC 9457 preservation in `CoreApiError`, and explicit connection/malformed-error fallbacks. Components receive the client through a small React context so tests and future endpoint settings do not require module mutation.
+- UI implemented in code: a static sidebar/top bar/main shell; health polling and manual refresh; workspace loading/empty/list/create states; task and run ID inspectors; resource detail rendering; and readable domain, validation, and connectivity errors. TanStack Query is the only server-state mechanism; form/lookup values remain local component state.
+- Scope held: no router, global UI store, mock records, task/run creation controls, repository features, orchestration, or future IDE panels were added.
+- Verification status: shared-types build, Studio strict TypeScript check, and Vite production build pass. Behavioral tests and live Core/Tauri connectivity remain pending, so this step is not yet marked as completed functionality.
+- Follow-up: add focused client/component tests and Studio/Core run documentation, then execute the complete workspace, Python, live HTTP, and native Tauri verification matrix.
+
+### 2026-07-19 — Add Studio behavior tests and run documentation
+
+- Files changed: `apps/studio/src/**/*.test.tsx`, `apps/studio/src/api/coreClient.test.ts`, `apps/studio/src/test/render.tsx`, `apps/studio/README.md`, root `README.md`, root and Studio `package.json`, and `docs/agent_memory.md`.
+- Tests added: seven Studio tests across five files cover typed health transport, RFC 9457 preservation, connection failure messages, healthy status rendering, workspace empty/create/refetch behavior, task validation details, and queued run rendering.
+- Testability decision: feature components depend on a context-provided `CoreClient`, while production receives the native/browser implementation and tests receive a deterministic in-process implementation. This keeps UI tests free of mock records in production and avoids a global state library.
+- Monorepo decision: root `pnpm check` now ends with the Studio `cargo check`, so the native Rust boundary is part of the normal repository health command rather than an undocumented side check.
+- Documentation: added exact two-terminal Core/Studio run commands, current UI behavior, Core URL/security scope, build commands, prerequisites, in-memory limitations, and the explicit deferred surface.
+- Verification: Studio strict TypeScript checking passed; all seven new Studio tests passed. Full root/Python checks, real Core requests through the built client, and native Tauri build/runtime validation remain pending.
+- Follow-up: perform the final verification matrix and fix only issues that block the required shell/connectivity outcome before promoting this cycle into `Implemented Functionality`.
+
+### 2026-07-19 15:18 MSK — Verify and complete the minimal Studio shell
+
+- Files changed: `apps/studio/**`, `packages/shared-types/src/{api,domain,index}.ts`, `.gitignore`, root `README.md`, root `package.json`, `pnpm-lock.yaml`, and `docs/agent_memory.md`.
+- Implemented: the runnable Tauri 2/React/Vite Studio package, scoped native Core transport, TanStack Query server cache, developer-tool layout, health/workspace/task/run panels, RFC 9457 UI, tests, app icons, local run/build documentation, and root scripts.
+- Native build issue resolved: Tauri requires a default application icon even when the bundle icon list is omitted. Added one source SVG and generated only the desktop icon set; the previously generated Android/iOS assets were removed because mobile targets are outside Studio scope.
+- Root verification: `pnpm check` passed strict TypeScript checks, 10 shared-types tests, 7 Studio tests, shared/Studio production builds, and native `cargo check`.
+- Core regression verification: Python 3.12 Ruff lint and format checks passed; all 12 Core API/OpenAPI tests passed with warnings treated as errors.
+- Native verification: `tauri build --no-bundle` produced the optimized desktop binary; `pnpm studio:build` produced `Mensura Studio.app` and `Mensura Studio_0.1.0_aarch64.dmg`. DMG creation required running outside the filesystem sandbox because it invokes macOS `hdiutil`.
+- Live connectivity verification: launched the release Studio binary with Uvicorn Core on `127.0.0.1:8000`; Core recorded `200` requests for `GET /health` and `GET /api/v1/workspaces` from the running Tauri WebView. Both processes were then stopped cleanly.
+- Working boundary: workspace creation and task/run inspectors are behavior-tested against the same injected client contract; Core still loses all resources on restart, and Studio does not start or supervise Core.
+- Next Studio priority: add explicit workspace selection plus task creation and placeholder run launch using the already implemented Core v1 POST endpoints. This creates the first user-driven task flow without pulling in editor, terminal, Kanban, or orchestration scope.
 
 ### 2026-07-19 14:24 MSK — Initialize persistent project memory
 
@@ -202,12 +252,17 @@
 - RFC 9457 `application/problem+json` responses for resource misses, conflicts, request validation, framework HTTP errors, and generic internal failures.
 - CamelCase JSON contracts aligned with TypeScript Workspace/Task ownership and documented in OpenAPI.
 - Twelve passing Core API/OpenAPI tests plus a successful real-Uvicorn smoke test.
+- Tauri 2 desktop Studio with React 19, Vite 8, a single resizable window, desktop app icons, CSP, and a local-Core-only native HTTP capability.
+- TanStack Query-backed Core health polling, workspace list/create behavior, task lookup, and run lookup with explicit loading, empty, success, connection-error, and RFC 9457 error states.
+- Shared Health, workspace transport, and Problem Details contracts aligned with Core's camelCase responses and nullable fields.
+- Seven passing Studio client/component tests and successful native release binary, macOS `.app`, and DMG builds.
+- Verified live desktop connectivity from the release Tauri WebView to Core health and workspace endpoints.
 
 ## Pending Tasks
 
 ### MVP
 
-1. Create a minimal Tauri/React Studio shell that connects to Core and shows service/workspace/task/run state.
+1. Add Studio workspace selection, task creation, and placeholder run launch using the existing Core v1 endpoints.
 2. Add local Git repository inspection and safe diff generation behind a Core adapter.
 3. Add the first Guard runner for configured lint/test commands with structured, blocking results.
 4. Add deterministic Vault repository indexing and basic retrieval; defer embeddings until the ingestion contract is stable.
@@ -280,6 +335,13 @@
 - Reason: the cycle requires runnable behavior but explicitly defers database integration.
 - Alternatives considered: SQLite or PostgreSQL now; deferred until resource and migration contracts are validated by the minimal API.
 - Consequences: all data disappears on restart and the README/OpenAPI must state that limitation; a durable adapter can replace storage without changing routes.
+
+### Studio Core transport and state boundary
+
+- Decision: use the Tauri 2 HTTP plugin for desktop requests with an allowlist restricted to local Core port 8000; use standard `fetch` outside Tauri; place endpoint methods behind an injected `CoreClient`; and use TanStack Query only for server state.
+- Reason: native requests avoid WebView CORS differences while Tauri capabilities make network access reviewable. Client injection provides focused tests and a future endpoint-settings seam without introducing a global store.
+- Alternatives considered: enabling wildcard CORS on Core, proxying every request through custom Rust commands, hard-coding fetch calls in panels, and adding a global UI state library. Rejected because each either widens access or duplicates state/transport logic without serving the minimal shell.
+- Consequences: a non-default Core origin needs both a `VITE_MENSURA_CORE_URL` build setting and a reviewed capability change; browser-only Vite use may additionally require CORS; Studio currently connects to Core but does not manage its lifecycle.
 
 ## Open Questions
 

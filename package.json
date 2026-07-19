@@ -11,12 +11,14 @@
   },
   "scripts": {
     "build": "pnpm --recursive build",
-    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "check": "pnpm typecheck && pnpm test && pnpm build && pnpm --filter @mensura/studio check:native",
+    "studio:build": "pnpm --filter @mensura/studio build:desktop",
+    "studio:dev": "pnpm --filter @mensura/studio dev:desktop",
     "test": "pnpm --recursive test",
     "typecheck": "pnpm --recursive typecheck"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.10"
   }
 }
