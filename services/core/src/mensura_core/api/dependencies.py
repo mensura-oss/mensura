@@ -8,6 +8,7 @@ from mensura_core.guard_service import GuardService
 from mensura_core.provider_registry import ProviderRegistry
 from mensura_core.service import CoreService
 from mensura_core.vault_service import VaultService
+from mensura_core.verification_service import ProposalVerificationService
 
 
 def get_core_service(request: Request) -> CoreService:
@@ -45,6 +46,16 @@ def get_change_proposal_service(request: Request) -> ChangeProposalService:
 ChangeProposalServiceDependency = Annotated[
     ChangeProposalService,
     Depends(get_change_proposal_service),
+]
+
+
+def get_proposal_verification_service(request: Request) -> ProposalVerificationService:
+    return cast(ProposalVerificationService, request.app.state.proposal_verification_service)
+
+
+ProposalVerificationServiceDependency = Annotated[
+    ProposalVerificationService,
+    Depends(get_proposal_verification_service),
 ]
 
 

@@ -46,7 +46,9 @@ describe("RunInspector", () => {
     ).toBeVisible();
     expect(screen.getByText(contextPackId)).toBeVisible();
     expect(screen.getByText("3")).toBeVisible();
-    expect(screen.getByText("4,096")).toBeVisible();
+    expect(
+      screen.getByText((4_096).toLocaleString().replace(/\s/g, " ")),
+    ).toBeVisible();
     expect(screen.getByRole("button", { name: "Execute run" })).toBeEnabled();
   });
 

@@ -249,3 +249,41 @@ class ChangeProposalInvalidStateError(ChangeProposalError):
         super().__init__(
             f"Change proposal '{proposal_id}' cannot be reviewed from status '{status}'."
         )
+
+
+class ProposalVerificationError(CoreError):
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)
+
+
+class ProposalVerificationNotFoundError(ProposalVerificationError):
+    def __init__(self, verification_id: UUID) -> None:
+        super().__init__(f"Proposal verification '{verification_id}' was not found.")
+
+
+class ProposalVerificationNotAllowedError(ProposalVerificationError):
+    def __init__(self, proposal_id: UUID, status: str) -> None:
+        super().__init__(
+            f"Change proposal '{proposal_id}' cannot be verified from status '{status}'. "
+            "Only approved proposals are eligible for isolated verification."
+        )
+
+
+class ProposalVerificationContentIncompleteError(ProposalVerificationError):
+    def __init__(self, proposal_id: UUID) -> None:
+        super().__init__(
+            f"Change proposal '{proposal_id}' stores truncated file content and cannot be "
+            "materialized faithfully in an isolated sandbox."
+        )
+
+
+class ProposalVerificationInProgressError(ProposalVerificationError):
+    def __init__(self, workspace_id: UUID) -> None:
+        super().__init__(
+            f"A proposal verification for workspace '{workspace_id}' is already in progress."
+        )
+
+
+class VerificationSandboxError(ProposalVerificationError):
+    """The temporary isolated sandbox could not be created."""

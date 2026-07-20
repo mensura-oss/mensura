@@ -1986,6 +1986,68 @@ input:focus-visible {
   background: #2a2111;
 }
 
+.badge--passed {
+  border-color: #166534;
+  color: #bbf7d0;
+  background: #0d2518;
+}
+
+.proposal-verification {
+  display: grid;
+  gap: 0.7rem;
+  border-top: 1px dashed #4c3b67;
+  padding-top: 0.75rem;
+}
+
+.proposal-verification__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.proposal-verification__pending,
+.proposal-verification__guard-summary,
+.proposal-verification__no-guard {
+  margin: 0;
+  color: #8f849e;
+  font-size: 0.63rem;
+}
+
+.proposal-verification__result {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.proposal-verification__outcome {
+  margin: 0;
+  color: #ddd6fe;
+  font-size: 0.67rem;
+  line-height: 1.5;
+}
+
+.proposal-verification__file {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid #3b3050;
+  border-radius: 0.45rem;
+  padding: 0.5rem 0.65rem;
+  background: #100e19;
+  color: #ddd6fe;
+  font-size: 0.63rem;
+}
+
+.proposal-verification__file code {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.proposal-verification__guard {
+  display: grid;
+  gap: 0.45rem;
+}
+
 @media (max-width: 1040px) {
   .app-shell {
     grid-template-columns: 176px minmax(0, 1fr);

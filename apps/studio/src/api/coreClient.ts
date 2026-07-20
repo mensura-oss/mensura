@@ -13,6 +13,8 @@ import type {
   GuardRunRequest,
   GuardRunResponse,
   ProblemDetails,
+  ProposalVerification,
+  ProposalVerificationCollection,
   ProviderCollection,
   ProviderDescriptor,
   ConfigureOpenAIProviderRequest,
@@ -61,6 +63,9 @@ export interface CoreClient {
     contextPackId: string,
   ): Promise<ContextPackManifest>;
   getChangeProposal(proposalId: string): Promise<ChangeProposal>;
+  getChangeProposalVerification(
+    verificationId: string,
+  ): Promise<ProposalVerification>;
   getLatestGuardRun(workspaceId: string): Promise<GuardRunResponse>;
   getRun(runId: string): Promise<Run>;
   getTask(taskId: string): Promise<Task>;
@@ -73,8 +78,12 @@ export interface CoreClient {
   ): Promise<VaultFileCollection>;
   listContextPacks(workspaceId: string): Promise<ContextPackCollection>;
   listChangeProposals(workspaceId: string): Promise<ChangeProposalCollection>;
+  listChangeProposalVerifications(
+    proposalId: string,
+  ): Promise<ProposalVerificationCollection>;
   listWorkspaces(): Promise<WorkspaceCollection>;
   listProviders(): Promise<ProviderCollection>;
+  verifyChangeProposal(proposalId: string): Promise<ProposalVerification>;
 }
 
 export class CoreApiError extends Error {
@@ -255,6 +264,11 @@ export function createCoreClient(options?: {
         `/api/v1/change-proposals/${encodeURIComponent(proposalId)}`,
       );
     },
+    getChangeProposalVerification(verificationId) {
+      return request<ProposalVerification>(
+        `/api/v1/verifications/${encodeURIComponent(verificationId)}`,
+      );
+    },
     getLatestGuardRun(workspaceId) {
       return request<GuardRunResponse>(
         `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/guard/runs/latest`,
@@ -298,6 +312,11 @@ export function createCoreClient(options?: {
         `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/change-proposals`,
       );
     },
+    listChangeProposalVerifications(proposalId) {
+      return request<ProposalVerificationCollection>(
+        `/api/v1/change-proposals/${encodeURIComponent(proposalId)}/verifications`,
+      );
+    },
     listVaultFiles(workspaceId, options = {}) {
       const search = new URLSearchParams();
       if (options.query) search.set("query", options.query);
@@ -311,6 +330,12 @@ export function createCoreClient(options?: {
     rejectChangeProposal(proposalId) {
       return request<ChangeProposal>(
         `/api/v1/change-proposals/${encodeURIComponent(proposalId)}/reject`,
+        { method: "POST" },
+      );
+    },
+    verifyChangeProposal(proposalId) {
+      return request<ProposalVerification>(
+        `/api/v1/change-proposals/${encodeURIComponent(proposalId)}/verify`,
         { method: "POST" },
       );
     },

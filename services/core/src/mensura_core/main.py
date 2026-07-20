@@ -38,6 +38,15 @@ from mensura_core.vault_repositories import (
     VaultInventoryRepository,
 )
 from mensura_core.vault_service import VaultService
+from mensura_core.verification_repositories import (
+    InMemoryProposalVerificationRepository,
+    ProposalVerificationRepository,
+)
+from mensura_core.verification_sandbox import (
+    GitWorktreeSandboxFactory,
+    VerificationSandboxFactory,
+)
+from mensura_core.verification_service import ProposalVerificationService
 
 
 def create_app(
@@ -55,6 +64,8 @@ def create_app(
     provider_settings_repository: ProviderSettingsRepository | None = None,
     credential_store: CredentialStore | None = None,
     openai_transport_factory: TransportFactory | None = None,
+    verification_repository: ProposalVerificationRepository | None = None,
+    verification_sandbox_factory: VerificationSandboxFactory | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Mensura Core API",
@@ -82,10 +93,12 @@ def create_app(
         immutable_context_pack_repository,
         providers,
     )
+    configuration_loader = guard_configuration_loader or JsonGuardConfigurationLoader()
+    command_runner = guard_command_runner or SubprocessGuardCommandRunner()
     app.state.guard_service = GuardService(
         core_repository,
-        guard_configuration_loader or JsonGuardConfigurationLoader(),
-        guard_command_runner or SubprocessGuardCommandRunner(),
+        configuration_loader,
+        command_runner,
         guard_run_repository or InMemoryGuardRunRepository(),
     )
     inventory_repository = vault_inventory_repository or InMemoryVaultInventoryRepository()
@@ -99,10 +112,19 @@ def create_app(
         inventory_repository,
         immutable_context_pack_repository,
     )
+    proposal_repository = change_proposal_repository or InMemoryChangeProposalRepository()
     app.state.change_proposal_service = ChangeProposalService(
         core_repository,
         immutable_context_pack_repository,
-        change_proposal_repository or InMemoryChangeProposalRepository(),
+        proposal_repository,
+    )
+    app.state.proposal_verification_service = ProposalVerificationService(
+        core_repository,
+        proposal_repository,
+        verification_repository or InMemoryProposalVerificationRepository(),
+        verification_sandbox_factory or GitWorktreeSandboxFactory(),
+        configuration_loader,
+        command_runner,
     )
     install_problem_handlers(app)
     app.include_router(health_router)

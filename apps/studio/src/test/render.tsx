@@ -24,6 +24,8 @@ export function createTestClient(
     getHealth: () => Promise.reject(new Error("Not implemented in test")),
     getContextPack: () => Promise.reject(new Error("Not implemented in test")),
     getChangeProposal: () => Promise.reject(new Error("Not implemented in test")),
+    getChangeProposalVerification: () =>
+      Promise.reject(new Error("Not implemented in test")),
     getLatestGuardRun: () => Promise.reject(new Error("Not implemented in test")),
     getRun: () => Promise.reject(new Error("Not implemented in test")),
     getTask: () => Promise.reject(new Error("Not implemented in test")),
@@ -33,6 +35,7 @@ export function createTestClient(
       Promise.reject(new Error("Not implemented in test")),
     listContextPacks: () => Promise.reject(new Error("Not implemented in test")),
     listChangeProposals: () => Promise.resolve({ items: [], total: 0 }),
+    listChangeProposalVerifications: () => Promise.resolve({ items: [], total: 0 }),
     listProviders: () => Promise.resolve({
       items: [
         {
@@ -57,6 +60,7 @@ export function createTestClient(
     listWorkspaces: () => Promise.reject(new Error("Not implemented in test")),
     listVaultFiles: () => Promise.reject(new Error("Not implemented in test")),
     rejectChangeProposal: () => Promise.reject(new Error("Not implemented in test")),
+    verifyChangeProposal: () => Promise.reject(new Error("Not implemented in test")),
     ...overrides,
   };
 }

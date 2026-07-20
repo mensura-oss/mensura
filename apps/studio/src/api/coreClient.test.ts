@@ -372,4 +372,32 @@ describe("Core client", () => {
       { method: "POST" },
     );
   });
+
+  it("verifies proposals in the sandbox and reads verification artifacts", async () => {
+    const fetcher = vi.fn(() =>
+      Promise.resolve(Response.json({ items: [], total: 0 }, { status: 200 })),
+    );
+    const client = createCoreClient({ baseUrl: "http://core.test", fetcher });
+
+    await client.verifyChangeProposal("proposal/id");
+    expect(fetcher).toHaveBeenNthCalledWith(
+      1,
+      "http://core.test/api/v1/change-proposals/proposal%2Fid/verify",
+      { method: "POST" },
+    );
+
+    await client.listChangeProposalVerifications("proposal/id");
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      "http://core.test/api/v1/change-proposals/proposal%2Fid/verifications",
+      undefined,
+    );
+
+    await client.getChangeProposalVerification("verification/id");
+    expect(fetcher).toHaveBeenNthCalledWith(
+      3,
+      "http://core.test/api/v1/verifications/verification%2Fid",
+      undefined,
+    );
+  });
 });

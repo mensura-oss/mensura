@@ -28,6 +28,9 @@ def test_openapi_exposes_the_implemented_v1_contract(client: TestClient) -> None
         "/api/v1/workspaces/{workspace_id}/change-proposals",
         "/api/v1/change-proposals/{proposal_id}/approve",
         "/api/v1/change-proposals/{proposal_id}/reject",
+        "/api/v1/change-proposals/{proposal_id}/verify",
+        "/api/v1/change-proposals/{proposal_id}/verifications",
+        "/api/v1/verifications/{verification_id}",
     }
 
 

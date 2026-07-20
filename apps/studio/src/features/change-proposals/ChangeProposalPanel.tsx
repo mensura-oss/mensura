@@ -11,6 +11,7 @@ import { queryKeys } from "../../app/queryClient";
 import { LoadingState } from "../../components/AsyncState";
 import { ProblemDetailsView } from "../../components/ProblemDetailsView";
 import { formatTimestamp } from "../../components/ResourceDetails";
+import { ProposalVerificationSection } from "./ProposalVerificationSection";
 
 export function ChangeProposalPanel({ run }: { run: Run }) {
   const client = useCoreClient();
@@ -95,6 +96,7 @@ export function ChangeProposalPanel({ run }: { run: Run }) {
         />
       ) : null}
       {review.isError ? <ProblemDetailsView error={review.error} /> : null}
+      {proposal ? <ProposalVerificationSection proposal={proposal} /> : null}
     </section>
   );
 }

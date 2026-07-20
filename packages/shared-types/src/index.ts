@@ -9,3 +9,4 @@ export * from "./provider.js";
 export * from "./repository.js";
 export * from "./state-machine.js";
 export * from "./vault.js";
+export * from "./verification.js";

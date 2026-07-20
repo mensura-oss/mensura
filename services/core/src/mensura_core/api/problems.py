@@ -25,6 +25,10 @@ from mensura_core.exceptions import (
     GuardRunInProgressError,
     GuardRunNotFoundError,
     NotGitRepositoryError,
+    ProposalVerificationContentIncompleteError,
+    ProposalVerificationInProgressError,
+    ProposalVerificationNotAllowedError,
+    ProposalVerificationNotFoundError,
     ProviderConfigurationMissingError,
     ProviderConfigurationUnavailableError,
     ProviderCredentialsInvalidError,
@@ -46,6 +50,7 @@ from mensura_core.exceptions import (
     VaultInventoryNotBuiltError,
     VaultPathInvalidError,
     VaultRootInvalidError,
+    VerificationSandboxError,
 )
 
 logger = logging.getLogger(__name__)
@@ -89,6 +94,11 @@ CHANGE_PROPOSAL_RUN_NOT_ELIGIBLE_TYPE = "urn:mensura:problem:change-proposal-run
 CHANGE_PROPOSAL_OUTPUT_INVALID_TYPE = "urn:mensura:problem:change-proposal-output-invalid"
 CHANGE_PROPOSAL_CONTENT_TOO_LARGE_TYPE = "urn:mensura:problem:change-proposal-content-too-large"
 CHANGE_PROPOSAL_INVALID_STATE_TYPE = "urn:mensura:problem:change-proposal-invalid-state"
+VERIFICATION_NOT_FOUND_TYPE = "urn:mensura:problem:verification-not-found"
+VERIFICATION_PROPOSAL_NOT_APPROVED_TYPE = "urn:mensura:problem:verification-proposal-not-approved"
+VERIFICATION_CONTENT_INCOMPLETE_TYPE = "urn:mensura:problem:verification-content-incomplete"
+VERIFICATION_IN_PROGRESS_TYPE = "urn:mensura:problem:verification-in-progress"
+VERIFICATION_SANDBOX_FAILED_TYPE = "urn:mensura:problem:verification-sandbox-failed"
 
 
 class InvalidParameter(BaseModel):
@@ -588,6 +598,66 @@ def install_problem_handlers(app: FastAPI) -> None:
             detail=error.detail,
         )
 
+    @app.exception_handler(ProposalVerificationNotFoundError)
+    async def proposal_verification_not_found_handler(
+        request: Request, error: ProposalVerificationNotFoundError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=404,
+            problem_type=VERIFICATION_NOT_FOUND_TYPE,
+            title="Proposal verification not found",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ProposalVerificationNotAllowedError)
+    async def proposal_verification_not_allowed_handler(
+        request: Request, error: ProposalVerificationNotAllowedError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=VERIFICATION_PROPOSAL_NOT_APPROVED_TYPE,
+            title="Proposal is not approved for verification",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ProposalVerificationContentIncompleteError)
+    async def proposal_verification_content_incomplete_handler(
+        request: Request, error: ProposalVerificationContentIncompleteError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=422,
+            problem_type=VERIFICATION_CONTENT_INCOMPLETE_TYPE,
+            title="Proposal content is incomplete for verification",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ProposalVerificationInProgressError)
+    async def proposal_verification_in_progress_handler(
+        request: Request, error: ProposalVerificationInProgressError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=VERIFICATION_IN_PROGRESS_TYPE,
+            title="Proposal verification already in progress",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(VerificationSandboxError)
+    async def verification_sandbox_failed_handler(
+        request: Request, error: VerificationSandboxError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=500,
+            problem_type=VERIFICATION_SANDBOX_FAILED_TYPE,
+            title="Verification sandbox could not be created",
+            detail=error.detail,
+        )
+
     @app.exception_handler(RequestValidationError)
     async def request_validation_handler(
         request: Request, error: RequestValidationError
@@ -662,6 +732,15 @@ CHANGE_PROPOSAL_CONFLICT_RESPONSE = problem_response(
 )
 CHANGE_PROPOSAL_INVALID_RESPONSE = problem_response(
     422, "The stored provider proposal output is not safe to materialize."
+)
+VERIFICATION_CONFLICT_RESPONSE = problem_response(
+    409, "The proposal or workspace state does not allow isolated verification."
+)
+VERIFICATION_UNSUPPORTED_RESPONSE = problem_response(
+    422, "The proposal content or workspace repository cannot be verified."
+)
+VERIFICATION_SANDBOX_RESPONSE = problem_response(
+    500, "The temporary isolated sandbox or a Guard command could not be started."
 )
 EXECUTION_CONFLICT_RESPONSE = problem_response(409, "The run cannot execute from current state.")
 PROVIDER_EXECUTION_RESPONSE = problem_response(502, "The provider execution did not succeed.")
