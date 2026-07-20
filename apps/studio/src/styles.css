@@ -2048,6 +2048,121 @@ input:focus-visible {
   gap: 0.45rem;
 }
 
+.proposal-application {
+  display: grid;
+  gap: 0.7rem;
+  border-top: 2px solid #854d0e;
+  padding-top: 0.8rem;
+}
+
+.proposal-application__boundary {
+  margin: 0;
+  border: 1px solid #854d0e;
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.7rem;
+  background: #211a10;
+  color: #fde68a;
+  font-size: 0.64rem;
+  line-height: 1.55;
+}
+
+.application-gate {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.application-gate li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #d8ccea;
+  font-size: 0.64rem;
+}
+
+.proposal-application__gate,
+.proposal-application__result {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.proposal-application__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.proposal-application__uses,
+.proposal-application__guard-summary,
+.proposal-application__no-guard,
+.proposal-application__blocked {
+  margin: 0;
+  color: #8f849e;
+  font-size: 0.63rem;
+}
+
+.proposal-application__outcome {
+  margin: 0;
+  color: #fde68a;
+  font-size: 0.67rem;
+  line-height: 1.5;
+}
+
+.proposal-application__file {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid #3b3050;
+  border-radius: 0.45rem;
+  padding: 0.5rem 0.65rem;
+  background: #100e19;
+  color: #ddd6fe;
+  font-size: 0.63rem;
+}
+
+.proposal-application__file code {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.proposal-application__digest {
+  color: #8f849e;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.58rem;
+  white-space: nowrap;
+}
+
+.proposal-application__guard,
+.proposal-application__undo {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.proposal-application__undo p {
+  margin: 0;
+  color: #a99fbb;
+  font-size: 0.63rem;
+  line-height: 1.5;
+}
+
+.proposal-application__undo-file {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #a99fbb;
+  font-size: 0.6rem;
+}
+
+.proposal-application__undo-file code {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 1040px) {
   .app-shell {
     grid-template-columns: 176px minmax(0, 1fr);

@@ -1,4 +1,7 @@
 import type {
+  ApplicationArtifact,
+  ApplicationCollection,
+  ApplyChangeProposalRequest,
   ChangeProposal,
   ChangeProposalCollection,
   ContextPackCollection,
@@ -45,6 +48,12 @@ export interface CoreClient {
   createChangeProposal(runId: string): Promise<CreateChangeProposalResponse>;
   approveChangeProposal(proposalId: string): Promise<ChangeProposal>;
   rejectChangeProposal(proposalId: string): Promise<ChangeProposal>;
+  applyChangeProposal(
+    proposalId: string,
+    input: ApplyChangeProposalRequest,
+  ): Promise<ApplicationArtifact>;
+  getApplication(applicationId: string): Promise<ApplicationArtifact>;
+  listWorkspaceApplications(workspaceId: string): Promise<ApplicationCollection>;
   createRun(taskId: string, input: CreateRunRequest): Promise<Run>;
   executeRun(runId: string, input: ExecuteRunRequest): Promise<Run>;
   configureOpenAIProvider(
@@ -176,6 +185,26 @@ export function createCoreClient(options?: {
       return request<ChangeProposal>(
         `/api/v1/change-proposals/${encodeURIComponent(proposalId)}/approve`,
         { method: "POST" },
+      );
+    },
+    applyChangeProposal(proposalId, input) {
+      return request<ApplicationArtifact>(
+        `/api/v1/change-proposals/${encodeURIComponent(proposalId)}/apply`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        },
+      );
+    },
+    getApplication(applicationId) {
+      return request<ApplicationArtifact>(
+        `/api/v1/applications/${encodeURIComponent(applicationId)}`,
+      );
+    },
+    listWorkspaceApplications(workspaceId) {
+      return request<ApplicationCollection>(
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/applications`,
       );
     },
     buildVaultInventory(workspaceId) {

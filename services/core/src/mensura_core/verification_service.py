@@ -26,6 +26,7 @@ from mensura_core.guard_models import GuardCheckKind, GuardCheckResult, GuardRun
 from mensura_core.guard_runner import GuardCommandRunner
 from mensura_core.models import ChangeProposalChangeType, Workspace, ensure_utc_timestamp
 from mensura_core.repositories import CoreRepository
+from mensura_core.safe_paths import resolve_safe_target
 from mensura_core.service import utc_now
 from mensura_core.verification_models import (
     VERIFICATION_GUARD_OUTPUT_EXCERPT_MAX_CHARS,
@@ -217,16 +218,8 @@ class ProposalVerificationService:
 
     @staticmethod
     def _safe_target(sandbox_root: Path, relative_path: str) -> Path | None:
-        """Refuse symlinked components so writes can never escape the sandbox."""
-        target = sandbox_root / relative_path
-        current = sandbox_root
-        for part in Path(relative_path).parts[:-1]:
-            current = current / part
-            if current.is_symlink() or (current.exists() and not current.is_dir()):
-                return None
-        if target.is_symlink():
-            return None
-        return target
+        """Refuse escapes and symlinked components so writes stay in the sandbox."""
+        return resolve_safe_target(sandbox_root, relative_path)
 
     @staticmethod
     def _file_result(

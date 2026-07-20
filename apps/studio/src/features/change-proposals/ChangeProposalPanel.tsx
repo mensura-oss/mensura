@@ -11,6 +11,7 @@ import { queryKeys } from "../../app/queryClient";
 import { LoadingState } from "../../components/AsyncState";
 import { ProblemDetailsView } from "../../components/ProblemDetailsView";
 import { formatTimestamp } from "../../components/ResourceDetails";
+import { ProposalApplicationSection } from "./ProposalApplicationSection";
 import { ProposalVerificationSection } from "./ProposalVerificationSection";
 
 export function ChangeProposalPanel({ run }: { run: Run }) {
@@ -97,6 +98,7 @@ export function ChangeProposalPanel({ run }: { run: Run }) {
       ) : null}
       {review.isError ? <ProblemDetailsView error={review.error} /> : null}
       {proposal ? <ProposalVerificationSection proposal={proposal} /> : null}
+      {proposal ? <ProposalApplicationSection proposal={proposal} /> : null}
     </section>
   );
 }

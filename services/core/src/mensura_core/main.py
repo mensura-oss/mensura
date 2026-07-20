@@ -4,6 +4,11 @@ from mensura_core import __version__
 from mensura_core.api.problems import install_problem_handlers
 from mensura_core.api.router import router as v1_router
 from mensura_core.api.routers.health import router as health_router
+from mensura_core.application_repositories import (
+    ApplicationRepository,
+    InMemoryApplicationRepository,
+)
+from mensura_core.application_service import ChangeApplicationService
 from mensura_core.change_proposal_repositories import (
     ChangeProposalRepository,
     InMemoryChangeProposalRepository,
@@ -66,6 +71,7 @@ def create_app(
     openai_transport_factory: TransportFactory | None = None,
     verification_repository: ProposalVerificationRepository | None = None,
     verification_sandbox_factory: VerificationSandboxFactory | None = None,
+    application_repository: ApplicationRepository | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Mensura Core API",
@@ -118,11 +124,20 @@ def create_app(
         immutable_context_pack_repository,
         proposal_repository,
     )
+    verifications_repository = verification_repository or InMemoryProposalVerificationRepository()
     app.state.proposal_verification_service = ProposalVerificationService(
         core_repository,
         proposal_repository,
-        verification_repository or InMemoryProposalVerificationRepository(),
+        verifications_repository,
         verification_sandbox_factory or GitWorktreeSandboxFactory(),
+        configuration_loader,
+        command_runner,
+    )
+    app.state.change_application_service = ChangeApplicationService(
+        core_repository,
+        proposal_repository,
+        verifications_repository,
+        application_repository or InMemoryApplicationRepository(),
         configuration_loader,
         command_runner,
     )

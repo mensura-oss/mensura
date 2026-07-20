@@ -9,6 +9,18 @@ from pydantic import BaseModel, ConfigDict
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from mensura_core.exceptions import (
+    ApplicationAlreadyExistsError,
+    ApplicationContentIncompleteError,
+    ApplicationEmptyProposalError,
+    ApplicationInProgressError,
+    ApplicationLiveDriftError,
+    ApplicationNotFoundError,
+    ApplicationProposalNotApprovedError,
+    ApplicationUnsafePathError,
+    ApplicationVerificationMismatchError,
+    ApplicationVerificationNotFoundError,
+    ApplicationVerificationNotPassedError,
+    ApplicationWriteError,
     ChangeProposalContentTooLargeError,
     ChangeProposalInvalidStateError,
     ChangeProposalNotFoundError,
@@ -99,6 +111,18 @@ VERIFICATION_PROPOSAL_NOT_APPROVED_TYPE = "urn:mensura:problem:verification-prop
 VERIFICATION_CONTENT_INCOMPLETE_TYPE = "urn:mensura:problem:verification-content-incomplete"
 VERIFICATION_IN_PROGRESS_TYPE = "urn:mensura:problem:verification-in-progress"
 VERIFICATION_SANDBOX_FAILED_TYPE = "urn:mensura:problem:verification-sandbox-failed"
+APPLICATION_NOT_FOUND_TYPE = "urn:mensura:problem:application-not-found"
+APPLICATION_PROPOSAL_NOT_APPROVED_TYPE = "urn:mensura:problem:application-proposal-not-approved"
+APPLICATION_CONTENT_INCOMPLETE_TYPE = "urn:mensura:problem:application-content-incomplete"
+APPLICATION_EMPTY_PROPOSAL_TYPE = "urn:mensura:problem:application-empty-proposal"
+APPLICATION_VERIFICATION_NOT_FOUND_TYPE = "urn:mensura:problem:application-verification-not-found"
+APPLICATION_VERIFICATION_MISMATCH_TYPE = "urn:mensura:problem:application-verification-mismatch"
+APPLICATION_VERIFICATION_NOT_PASSED_TYPE = "urn:mensura:problem:application-verification-not-passed"
+APPLICATION_ALREADY_EXISTS_TYPE = "urn:mensura:problem:application-already-exists"
+APPLICATION_IN_PROGRESS_TYPE = "urn:mensura:problem:application-in-progress"
+APPLICATION_LIVE_DRIFT_TYPE = "urn:mensura:problem:application-live-drift"
+APPLICATION_UNSAFE_PATH_TYPE = "urn:mensura:problem:application-unsafe-path"
+APPLICATION_WRITE_FAILED_TYPE = "urn:mensura:problem:application-write-failed"
 
 
 class InvalidParameter(BaseModel):
@@ -658,6 +682,150 @@ def install_problem_handlers(app: FastAPI) -> None:
             detail=error.detail,
         )
 
+    @app.exception_handler(ApplicationNotFoundError)
+    async def application_not_found_handler(
+        request: Request, error: ApplicationNotFoundError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=404,
+            problem_type=APPLICATION_NOT_FOUND_TYPE,
+            title="Application not found",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ApplicationProposalNotApprovedError)
+    async def application_proposal_not_approved_handler(
+        request: Request, error: ApplicationProposalNotApprovedError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=APPLICATION_PROPOSAL_NOT_APPROVED_TYPE,
+            title="Proposal is not approved for application",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ApplicationContentIncompleteError)
+    async def application_content_incomplete_handler(
+        request: Request, error: ApplicationContentIncompleteError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=422,
+            problem_type=APPLICATION_CONTENT_INCOMPLETE_TYPE,
+            title="Proposal content is incomplete for application",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ApplicationEmptyProposalError)
+    async def application_empty_proposal_handler(
+        request: Request, error: ApplicationEmptyProposalError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=422,
+            problem_type=APPLICATION_EMPTY_PROPOSAL_TYPE,
+            title="Proposal has no changes to apply",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ApplicationVerificationNotFoundError)
+    async def application_verification_not_found_handler(
+        request: Request, error: ApplicationVerificationNotFoundError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=404,
+            problem_type=APPLICATION_VERIFICATION_NOT_FOUND_TYPE,
+            title="Verification not found for application",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ApplicationVerificationMismatchError)
+    async def application_verification_mismatch_handler(
+        request: Request, error: ApplicationVerificationMismatchError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=APPLICATION_VERIFICATION_MISMATCH_TYPE,
+            title="Verification does not match the proposal",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ApplicationVerificationNotPassedError)
+    async def application_verification_not_passed_handler(
+        request: Request, error: ApplicationVerificationNotPassedError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=APPLICATION_VERIFICATION_NOT_PASSED_TYPE,
+            title="Verification did not pass",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ApplicationAlreadyExistsError)
+    async def application_already_exists_handler(
+        request: Request, error: ApplicationAlreadyExistsError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=APPLICATION_ALREADY_EXISTS_TYPE,
+            title="Proposal already applied",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ApplicationInProgressError)
+    async def application_in_progress_handler(
+        request: Request, error: ApplicationInProgressError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=APPLICATION_IN_PROGRESS_TYPE,
+            title="Application already in progress",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ApplicationLiveDriftError)
+    async def application_live_drift_handler(
+        request: Request, error: ApplicationLiveDriftError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=APPLICATION_LIVE_DRIFT_TYPE,
+            title="Live working tree drifted from the verified basis",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ApplicationUnsafePathError)
+    async def application_unsafe_path_handler(
+        request: Request, error: ApplicationUnsafePathError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=422,
+            problem_type=APPLICATION_UNSAFE_PATH_TYPE,
+            title="Proposed path is unsafe",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(ApplicationWriteError)
+    async def application_write_failed_handler(
+        request: Request, error: ApplicationWriteError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=500,
+            problem_type=APPLICATION_WRITE_FAILED_TYPE,
+            title="Live working tree could not be written",
+            detail=error.detail,
+        )
+
     @app.exception_handler(RequestValidationError)
     async def request_validation_handler(
         request: Request, error: RequestValidationError
@@ -741,6 +909,15 @@ VERIFICATION_UNSUPPORTED_RESPONSE = problem_response(
 )
 VERIFICATION_SANDBOX_RESPONSE = problem_response(
     500, "The temporary isolated sandbox or a Guard command could not be started."
+)
+APPLICATION_CONFLICT_RESPONSE = problem_response(
+    409, "The proposal, verification, or live working tree does not allow application."
+)
+APPLICATION_UNSUPPORTED_RESPONSE = problem_response(
+    422, "The proposal content, referenced verification, or a proposed path cannot be applied."
+)
+APPLICATION_WRITE_RESPONSE = problem_response(
+    500, "The live working tree could not be staged for application."
 )
 EXECUTION_CONFLICT_RESPONSE = problem_response(409, "The run cannot execute from current state.")
 PROVIDER_EXECUTION_RESPONSE = problem_response(502, "The provider execution did not succeed.")

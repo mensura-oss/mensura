@@ -10,8 +10,11 @@ export function createTestClient(
 ): CoreClient {
   return {
     baseUrl: "http://127.0.0.1:8000",
+    applyChangeProposal: () => Promise.reject(new Error("Not implemented in test")),
     approveChangeProposal: () => Promise.reject(new Error("Not implemented in test")),
     buildVaultInventory: () => Promise.reject(new Error("Not implemented in test")),
+    getApplication: () => Promise.reject(new Error("Not implemented in test")),
+    listWorkspaceApplications: () => Promise.resolve({ items: [], total: 0 }),
     configureOpenAIProvider: () =>
       Promise.reject(new Error("Not implemented in test")),
     createContextPack: () => Promise.reject(new Error("Not implemented in test")),

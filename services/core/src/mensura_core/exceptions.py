@@ -287,3 +287,97 @@ class ProposalVerificationInProgressError(ProposalVerificationError):
 
 class VerificationSandboxError(ProposalVerificationError):
     """The temporary isolated sandbox could not be created."""
+
+
+class ChangeApplicationError(CoreError):
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)
+
+
+class ApplicationNotFoundError(ChangeApplicationError):
+    def __init__(self, application_id: UUID) -> None:
+        super().__init__(f"Application '{application_id}' was not found.")
+
+
+class ApplicationProposalNotApprovedError(ChangeApplicationError):
+    def __init__(self, proposal_id: UUID, status: str) -> None:
+        super().__init__(
+            f"Change proposal '{proposal_id}' cannot be applied from status '{status}'. "
+            "Only approved proposals are eligible for application."
+        )
+
+
+class ApplicationContentIncompleteError(ChangeApplicationError):
+    def __init__(self, proposal_id: UUID) -> None:
+        super().__init__(
+            f"Change proposal '{proposal_id}' stores truncated file content and cannot be "
+            "applied faithfully to the live working tree."
+        )
+
+
+class ApplicationEmptyProposalError(ChangeApplicationError):
+    def __init__(self, proposal_id: UUID) -> None:
+        super().__init__(
+            f"Change proposal '{proposal_id}' has no file changes to apply to the live "
+            "working tree."
+        )
+
+
+class ApplicationVerificationNotFoundError(ChangeApplicationError):
+    def __init__(self, verification_id: UUID) -> None:
+        super().__init__(
+            f"Proposal verification '{verification_id}' was not found for this application."
+        )
+
+
+class ApplicationVerificationMismatchError(ChangeApplicationError):
+    def __init__(self, verification_id: UUID, proposal_id: UUID) -> None:
+        super().__init__(
+            f"Verification '{verification_id}' does not belong to change proposal "
+            f"'{proposal_id}' and cannot authorize its application."
+        )
+
+
+class ApplicationVerificationNotPassedError(ChangeApplicationError):
+    def __init__(self, verification_id: UUID, status: str) -> None:
+        super().__init__(
+            f"Verification '{verification_id}' is '{status}'. Only a passing verification "
+            "can authorize applying a proposal to the live working tree."
+        )
+
+
+class ApplicationAlreadyExistsError(ChangeApplicationError):
+    def __init__(self, proposal_id: UUID) -> None:
+        super().__init__(
+            f"Change proposal '{proposal_id}' has already been applied to the live working "
+            "tree. Applications are single-use and are not re-applied automatically."
+        )
+
+
+class ApplicationInProgressError(ChangeApplicationError):
+    def __init__(self, workspace_id: UUID) -> None:
+        super().__init__(f"An application for workspace '{workspace_id}' is already in progress.")
+
+
+class ApplicationLiveDriftError(ChangeApplicationError):
+    def __init__(self, path: str) -> None:
+        super().__init__(
+            f"Live file '{path}' has drifted from the verified materialization basis. "
+            "Application was refused and nothing was written."
+        )
+
+
+class ApplicationUnsafePathError(ChangeApplicationError):
+    def __init__(self, path: str) -> None:
+        super().__init__(
+            f"Proposed path '{path}' resolves outside the workspace root or crosses a "
+            "symlink. Application was refused and nothing was written."
+        )
+
+
+class ApplicationWriteError(ChangeApplicationError):
+    def __init__(self) -> None:
+        super().__init__(
+            "The live working tree could not be staged for application; nothing was written."
+        )

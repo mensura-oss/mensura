@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from mensura_core.api.routers import (
+    applications,
     change_proposals,
     context_packs,
     guard,
@@ -22,3 +23,4 @@ router.include_router(vault.router)
 router.include_router(context_packs.router)
 router.include_router(change_proposals.router)
 router.include_router(verifications.router)
+router.include_router(applications.router)

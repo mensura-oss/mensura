@@ -15,6 +15,8 @@ export function createStudioQueryClient() {
 }
 
 export const queryKeys = {
+  application: (applicationId: string) =>
+    ["core", "applications", applicationId] as const,
   changeProposal: (proposalId: string) =>
     ["core", "change-proposals", proposalId] as const,
   changeProposalVerifications: (proposalId: string) =>
@@ -48,6 +50,8 @@ export const queryKeys = {
     ["core", "workspaces", workspaceId, "vault", "inventory"] as const,
   verification: (verificationId: string) =>
     ["core", "verifications", verificationId] as const,
+  workspaceApplications: (workspaceId: string) =>
+    ["core", "workspaces", workspaceId, "applications"] as const,
   workspaceRepository: (workspaceId: string) =>
     ["core", "workspaces", workspaceId, "repository"] as const,
   workspaces: ["core", "workspaces"] as const,

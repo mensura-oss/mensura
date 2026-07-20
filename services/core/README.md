@@ -1,6 +1,6 @@
 # Mensura Core
 
-Mensura Core is the HTTP boundary for tasks and controlled agent execution. The current service implements versioned resource contracts, process-local resource storage, read-only local Git inspection, deterministic Vault inventory/retrieval, immutable context-pack assembly, a manual Ruff/pytest Guard runner, the credential-free deterministic provider, one optional OpenAI BYOK adapter with bounded structured results, separately persisted write-isolated change-proposal review, and isolated sandbox verification of approved proposals in temporary Git worktrees. It does not edit the live repository, apply patches to any branch, generate embeddings, implement a full policy engine, or persist run/proposal/verification resources across restarts.
+Mensura Core is the HTTP boundary for tasks and controlled agent execution. The current service implements versioned resource contracts, process-local resource storage, read-only local Git inspection, deterministic Vault inventory/retrieval, immutable context-pack assembly, a manual Ruff/pytest Guard runner, the credential-free deterministic provider, one optional OpenAI BYOK adapter with bounded structured results, separately persisted write-isolated change-proposal review, isolated sandbox verification of approved proposals in temporary Git worktrees, and an explicit digest-checked apply-to-live step that writes an approved, verified proposal to the live working tree with atomic writes and a separate audit artifact. It never commits, stages, pushes, or checks out; it does not apply patches blindly, generate embeddings, implement a full policy engine, execute undo, or persist run/proposal/verification/application resources across restarts.
 
 ## Requirements
 
@@ -67,6 +67,9 @@ JSON property names use camelCase. Resource identifiers are UUIDs and timestamps
 | `POST` | `/api/v1/change-proposals/{proposal_id}/verify` | Verifies an approved proposal in a temporary isolated Git worktree and returns `201` |
 | `GET` | `/api/v1/change-proposals/{proposal_id}/verifications` | Lists verification artifacts for a proposal |
 | `GET` | `/api/v1/verifications/{verification_id}` | Returns one verification artifact |
+| `POST` | `/api/v1/change-proposals/{proposal_id}/apply` | Applies an approved, verified proposal to the live working tree (`{ verificationId }`) and returns `201` |
+| `GET` | `/api/v1/applications/{application_id}` | Returns one application artifact |
+| `GET` | `/api/v1/workspaces/{workspace_id}/applications` | Lists application artifacts for a workspace |
 
 `POST /api/v1/tasks/{task_id}/runs` requires this strict body:
 
@@ -116,7 +119,15 @@ Review state belongs only to the proposal. The complete lifecycle is `proposed -
 
 Verification never writes the live branch, working tree, index, or repository files, and it performs no commit, push, or stage anywhere—including inside the sandbox. Materialization refuses symlinked path components, requires create targets to be absent, and requires modify/delete targets to match the captured `beforeDigest`; any refusal becomes an unapplied file result rather than a write. If any file cannot be applied, Guard is skipped and the outcome is `materialization_failed`.
 
-Each verification is a separate immutable `ProposalVerification` schema-v1 artifact with `passed | failed` status, a closed `sandbox_verified | guard_failed | materialization_failed` outcome, proposal/run/task/workspace/context lineage, sandbox metadata (`git_worktree` kind, verified commit, cleanup flag—no temporary paths), per-file results (`path`, change type, before/after/sandbox digests, `appliedInSandbox`, closed reason), safe diff aggregates, and a compact Guard result whose per-check output is bounded to a 2,000-character excerpt. Repeated verification creates additional artifacts; one verification runs per workspace at a time. Applying an approved proposal to the live repository remains unimplemented by design.
+Each verification is a separate immutable `ProposalVerification` schema-v1 artifact with `passed | failed` status, a closed `sandbox_verified | guard_failed | materialization_failed` outcome, proposal/run/task/workspace/context lineage, sandbox metadata (`git_worktree` kind, verified commit, cleanup flag—no temporary paths), per-file results (`path`, change type, before/after/sandbox digests, `appliedInSandbox`, closed reason), safe diff aggregates, and a compact Guard result whose per-check output is bounded to a 2,000-character excerpt. Repeated verification creates additional artifacts; one verification runs per workspace at a time. A passing verification is the precondition for the separate explicit apply-to-live action.
+
+## Explicit apply to live working tree
+
+`POST /api/v1/change-proposals/{proposal_id}/apply` accepts `{ "verificationId": "..." }` and is the only flow that writes the user's live working tree. It is eligible only when the proposal is `approved`, its stored text is complete, it has at least one file change, the referenced verification belongs to the proposal and is `passed`, no application already exists for the proposal (single-apply), the workspace is a usable non-bare Git repository, and the committed Guard configuration loads. All of these are checked before any write; a failure returns an RFC 9457 problem and nothing is written.
+
+Application is digest-checked and all-or-nothing. Phase one resolves every safe live path (refusing absolute paths, `..` components, and symlinked parents) and compares each live file's current digest against the proposal's captured `beforeDigest` (create targets must be absent); any drift or unsafe path refuses the whole application before writing. Phase two stages every create/modify body to a same-directory temporary file with `flush`+`fsync`, then commits atomic `os.replace`/`os.unlink`. Applied content is the proposal's exact verified text—never re-generated and never a provider call. No `git add`, commit, push, checkout, or reset is ever run; the changes simply appear as ordinary working-tree edits. After a successful write Guard re-runs against the live tree.
+
+Each application is a separate immutable `ApplicationArtifact` schema-v1 record referencing proposal, verification, run, task, workspace, and context lineage, with a closed status of `applied_guard_passed`, `applied_guard_failed`, `applied_guard_unavailable` (written, but Guard could not execute—recorded, never hidden), or `application_failed` (a rare partial write recorded per file). It carries `live_working_tree` target metadata (live HEAD, verification commit, HEAD-moved flag), a compact bounded Guard result, per-file applied results (expected/live-before/after/applied digests plus a closed `applied | write_failed | not_attempted` reason), a summary, and undo metadata (per-file prior existence/digest/bounded prior text with a truncation flag and applied digest). Undo metadata is captured for a future undo feature; undo execution is not implemented. An artifact exists only when the live tree was written.
 
 ## Local BYOK configuration
 
@@ -262,10 +273,23 @@ Proposal verification additionally uses:
 - `urn:mensura:problem:verification-content-incomplete` (`422`) when stored proposal text is truncated;
 - `urn:mensura:problem:verification-in-progress` (`409`) for a concurrent verification in the same workspace;
 - `urn:mensura:problem:verification-sandbox-failed` (`500`) when the temporary worktree cannot be created;
+
+Apply-to-live additionally uses:
+
+- `urn:mensura:problem:application-not-found` (`404`);
+- `urn:mensura:problem:application-proposal-not-approved` (`409`);
+- `urn:mensura:problem:application-content-incomplete` (`422`) when stored proposal text is truncated;
+- `urn:mensura:problem:application-empty-proposal` (`422`) when the proposal has no file changes;
+- `urn:mensura:problem:application-verification-not-found` (`404`), `-verification-mismatch` (`409`), and `-verification-not-passed` (`409`);
+- `urn:mensura:problem:application-already-exists` (`409`) for a single-apply re-attempt;
+- `urn:mensura:problem:application-in-progress` (`409`) for a concurrent application in the same workspace;
+- `urn:mensura:problem:application-live-drift` (`409`) when a live file no longer matches the verified basis;
+- `urn:mensura:problem:application-unsafe-path` (`422`) when a proposed path escapes the workspace root;
+- `urn:mensura:problem:application-write-failed` (`500`) when staging fails before any live file changed;
 - the existing repository problems (`repository-path-not-found`, `not-a-git-repository`, `unsupported-repository-state`) and Guard configuration/execution problems for the sandbox's Guard run.
 
 Problem URNs are stable machine identifiers. They can be replaced by resolvable HTTPS documentation only as a versioned compatibility decision.
 
 ## Storage boundary
 
-Resource routers depend on `CoreService`; provider routes use `ProviderRegistry`; Guard, Vault, context-pack, change-proposal, and verification routes retain dedicated services. Services use replaceable storage/config/credential/runner/Git/filesystem/provider/sandbox protocols. Workspaces/tasks/runs, Guard results, Vault inventories, context packs, change proposals, and verification artifacts remain in memory. Only the non-secret OpenAI model setting and keyring credential survive Core restarts. Git/filesystem adapters provide read-only live inspection; provider adapters consume only persisted task/context objects; proposal materialization consumes only the persisted successful run plus its exact stored manifest. Isolated verification is the only flow that writes files at all, and it writes exclusively inside its temporary worktree before removing it. External filesystem changes can make inventory/context capture best-effort, but executing a run or creating/reviewing its proposal does not reread or write the repository.
+Resource routers depend on `CoreService`; provider routes use `ProviderRegistry`; Guard, Vault, context-pack, change-proposal, verification, and application routes retain dedicated services. Services use replaceable storage/config/credential/runner/Git/filesystem/provider/sandbox protocols. Workspaces/tasks/runs, Guard results, Vault inventories, context packs, change proposals, verification artifacts, and application artifacts remain in memory. Only the non-secret OpenAI model setting and keyring credential survive Core restarts. Git/filesystem adapters provide read-only live inspection; provider adapters consume only persisted task/context objects; proposal materialization consumes only the persisted successful run plus its exact stored manifest. Isolated verification writes exclusively inside its temporary worktree before removing it. Explicit apply-to-live is the only flow that writes the live working tree, and it does so with digest checks and atomic replaces after every precondition passes—still without any Git command. External filesystem changes can make inventory/context capture best-effort, but executing a run or creating/reviewing/verifying its proposal does not write the repository.

@@ -2,6 +2,7 @@ from typing import Annotated, cast
 
 from fastapi import Depends, Request
 
+from mensura_core.application_service import ChangeApplicationService
 from mensura_core.change_proposal_service import ChangeProposalService
 from mensura_core.context_pack_service import ContextPackService
 from mensura_core.guard_service import GuardService
@@ -56,6 +57,16 @@ def get_proposal_verification_service(request: Request) -> ProposalVerificationS
 ProposalVerificationServiceDependency = Annotated[
     ProposalVerificationService,
     Depends(get_proposal_verification_service),
+]
+
+
+def get_change_application_service(request: Request) -> ChangeApplicationService:
+    return cast(ChangeApplicationService, request.app.state.change_application_service)
+
+
+ChangeApplicationServiceDependency = Annotated[
+    ChangeApplicationService,
+    Depends(get_change_application_service),
 ]
 
 

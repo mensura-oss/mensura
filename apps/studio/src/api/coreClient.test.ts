@@ -400,4 +400,38 @@ describe("Core client", () => {
       undefined,
     );
   });
+
+  it("applies a proposal and reads application artifacts on encoded routes", async () => {
+    const fetcher = vi.fn(() =>
+      Promise.resolve(Response.json({ items: [], total: 0 }, { status: 200 })),
+    );
+    const client = createCoreClient({ baseUrl: "http://core.test", fetcher });
+
+    await client.applyChangeProposal("proposal/id", {
+      verificationId: "verification/id",
+    });
+    expect(fetcher).toHaveBeenNthCalledWith(
+      1,
+      "http://core.test/api/v1/change-proposals/proposal%2Fid/apply",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ verificationId: "verification/id" }),
+      },
+    );
+
+    await client.getApplication("application/id");
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      "http://core.test/api/v1/applications/application%2Fid",
+      undefined,
+    );
+
+    await client.listWorkspaceApplications("workspace/id");
+    expect(fetcher).toHaveBeenNthCalledWith(
+      3,
+      "http://core.test/api/v1/workspaces/workspace%2Fid/applications",
+      undefined,
+    );
+  });
 });
