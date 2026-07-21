@@ -3,11 +3,14 @@ from typing import Annotated, cast
 from fastapi import Depends, Request
 
 from mensura_core.application_service import ChangeApplicationService
+from mensura_core.backup_service import BackupService
 from mensura_core.change_proposal_service import ChangeProposalService
 from mensura_core.context_pack_service import ContextPackService
 from mensura_core.guard_service import GuardService
+from mensura_core.job_service import JobService
 from mensura_core.provider_registry import ProviderRegistry
 from mensura_core.service import CoreService
+from mensura_core.undo_service import UndoService
 from mensura_core.vault_service import VaultService
 from mensura_core.verification_service import ProposalVerificationService
 
@@ -70,8 +73,32 @@ ChangeApplicationServiceDependency = Annotated[
 ]
 
 
+def get_undo_service(request: Request) -> UndoService:
+    return cast(UndoService, request.app.state.undo_service)
+
+
+UndoServiceDependency = Annotated[
+    UndoService,
+    Depends(get_undo_service),
+]
+
+
 def get_provider_registry(request: Request) -> ProviderRegistry:
     return cast(ProviderRegistry, request.app.state.provider_registry)
 
 
 ProviderRegistryDependency = Annotated[ProviderRegistry, Depends(get_provider_registry)]
+
+
+def get_backup_service(request: Request) -> BackupService:
+    return cast(BackupService, request.app.state.backup_service)
+
+
+BackupServiceDependency = Annotated[BackupService, Depends(get_backup_service)]
+
+
+def get_job_service(request: Request) -> JobService:
+    return cast(JobService, request.app.state.job_service)
+
+
+JobServiceDependency = Annotated[JobService, Depends(get_job_service)]

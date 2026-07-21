@@ -381,3 +381,105 @@ class ApplicationWriteError(ChangeApplicationError):
         super().__init__(
             "The live working tree could not be staged for application; nothing was written."
         )
+
+
+class UndoError(CoreError):
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)
+
+
+class UndoNotFoundError(UndoError):
+    def __init__(self, undo_id: UUID) -> None:
+        super().__init__(f"Undo artifact '{undo_id}' was not found.")
+
+
+class UndoNotEligibleError(UndoError):
+    def __init__(self, application_id: UUID, reason: str) -> None:
+        super().__init__(
+            f"Application '{application_id}' is not eligible for undo. {reason}"
+        )
+
+
+class UndoAlreadyExistsError(UndoError):
+    def __init__(self, application_id: UUID) -> None:
+        super().__init__(
+            f"Application '{application_id}' has already been undone."
+        )
+
+
+class UndoMetadataIncompleteError(UndoError):
+    def __init__(self, path: str) -> None:
+        super().__init__(
+            f"Undo metadata for '{path}' is incomplete (truncated prior content). "
+            "This file requires external recovery."
+        )
+
+
+class UndoLiveDriftError(UndoError):
+    def __init__(self, path: str) -> None:
+        super().__init__(
+            f"Live file '{path}' has drifted from the recorded applied digest. "
+            "Undo was refused and nothing was written."
+        )
+
+
+class UndoUnsafePathError(UndoError):
+    def __init__(self, path: str) -> None:
+        super().__init__(
+            f"Undo target path '{path}' resolves outside the workspace root or crosses a "
+            "symlink. Undo was refused and nothing was written."
+        )
+
+
+class UndoWriteError(UndoError):
+    def __init__(self) -> None:
+        super().__init__(
+            "The live working tree could not be staged for undo; nothing was written."
+        )
+
+
+class JobError(CoreError):
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)
+
+
+class JobNotFoundError(JobError):
+    def __init__(self, job_id: UUID) -> None:
+        super().__init__(f"Job '{job_id}' was not found.")
+
+
+class BackupError(CoreError):
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)
+
+
+class BackupNotFoundError(BackupError):
+    def __init__(self, backup_id: UUID) -> None:
+        super().__init__(f"Backup '{backup_id}' was not found.")
+
+
+class BackupNotCompletedError(BackupError):
+    def __init__(self, backup_id: UUID) -> None:
+        super().__init__(
+            f"Backup '{backup_id}' has status 'failed' and cannot be restored."
+        )
+
+
+class BackupIntegrityError(BackupError):
+    def __init__(self, backup_id: UUID, reason: str) -> None:
+        super().__init__(
+            f"Backup '{backup_id}' failed integrity check. {reason}"
+        )
+
+
+class BackupRestoreError(BackupError):
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+
+
+class BackupWriteError(BackupError):
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)

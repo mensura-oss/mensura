@@ -12,6 +12,7 @@ from mensura_core.change_proposal_models import (
     ChangeProposalStatus,
 )
 from mensura_core.change_proposal_repositories import ChangeProposalRepository
+from mensura_core.event_publisher import EventPublisher, MensuraEvent
 from mensura_core.exceptions import (
     ChangeProposalNotFoundError,
     ProposalVerificationContentIncompleteError,
@@ -65,6 +66,7 @@ class ProposalVerificationService:
         id_factory: IdFactory = uuid4,
         clock: Clock = utc_now,
         monotonic: Monotonic = perf_counter,
+        event_publisher: EventPublisher | None = None,
     ) -> None:
         self._core_repository = core_repository
         self._proposal_repository = proposal_repository
@@ -75,6 +77,7 @@ class ProposalVerificationService:
         self._id_factory = id_factory
         self._clock = clock
         self._monotonic = monotonic
+        self._event_publisher = event_publisher
         self._active_workspaces: set[UUID] = set()
         self._active_lock = Lock()
 
@@ -102,6 +105,21 @@ class ProposalVerificationService:
         self._require_proposal(proposal_id)
         items = tuple(self._verification_repository.list_for_proposal(proposal_id))
         return ProposalVerificationCollection(items=items, total=len(items))
+
+    def _publish_verification_event(self, verification: ProposalVerification) -> None:
+        if self._event_publisher is None:
+            return
+        summary = f"Verification {verification.status}. Outcome: {verification.outcome.value}."
+        self._event_publisher.publish(
+            MensuraEvent(
+                event_type="verification.created",
+                workspace_id=verification.workspace_id,
+                entity_type="verification",
+                entity_id=verification.id,
+                status=verification.status.value,
+                summary=summary,
+            )
+        )
 
     def _verify_in_sandbox(
         self, workspace: Workspace, proposal: ChangeProposal
@@ -150,6 +168,7 @@ class ProposalVerificationService:
             duration_ms=max(0, round((self._monotonic() - started) * 1000)),
         )
         self._verification_repository.save(verification)
+        self._publish_verification_event(verification)
         return verification
 
     def _materialize(
@@ -241,6 +260,7 @@ class ProposalVerificationService:
     def _all_applied(file_results: tuple[FileVerificationResult, ...]) -> bool:
         return all(result.applied_in_sandbox for result in file_results)
 
+    @staticmethod
     @staticmethod
     def _safe_diff(
         proposal: ChangeProposal, file_results: tuple[FileVerificationResult, ...]

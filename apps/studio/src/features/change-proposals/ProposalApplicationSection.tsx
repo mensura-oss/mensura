@@ -6,6 +6,9 @@ import type {
   AppliedFileReason,
   ChangeProposal,
   ProposalVerification,
+  UndoArtifact,
+  UndoCollection,
+  UndoFileAction,
 } from "@mensura/shared-types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -62,6 +65,12 @@ export function ProposalApplicationSection({
     queryFn: () => client.listWorkspaceApplications(workspaceId),
     retry: false,
   });
+  const undos = useQuery({
+    queryKey: queryKeys.workspaceUndos(workspaceId),
+    queryFn: () => client.listWorkspaceUndos(workspaceId),
+    retry: false,
+    enabled: workspaceId !== null,
+  });
 
   const apply = useMutation({
     mutationFn: (verificationId: string) =>
@@ -86,6 +95,29 @@ export function ProposalApplicationSection({
     },
   });
 
+  const undo = useMutation({
+    mutationFn: (applicationId: string) =>
+      client.undoApplication(applicationId),
+    onSuccess: (undoArtifact) => {
+      queryClient.setQueryData(
+        queryKeys.undo(undoArtifact.id),
+        undoArtifact,
+      );
+      queryClient.setQueryData<UndoCollection>(
+        queryKeys.workspaceUndos(workspaceId),
+        (current) => {
+          const items = [
+            ...(current?.items ?? []).filter(
+              (item) => item.id !== undoArtifact.id,
+            ),
+            undoArtifact,
+          ];
+          return { items, total: items.length };
+        },
+      );
+    },
+  });
+
   if (proposal.status !== "approved") return null;
 
   const verificationItems = verifications.data?.items ?? [];
@@ -96,6 +128,12 @@ export function ProposalApplicationSection({
     (item) => item.proposalId === proposal.id,
   );
   const application = apply.data ?? existing;
+  const existingUndo = application
+    ? undos.data?.items.find(
+        (item) => item.applicationId === application.id,
+      )
+    : undefined;
+  const undoArtifact = undo.data ?? existingUndo;
 
   return (
     <section
@@ -129,7 +167,13 @@ export function ProposalApplicationSection({
       ) : null}
 
       {application ? (
-        <ApplicationResult application={application} />
+        <ApplicationResult
+          application={application}
+          undoArtifact={undoArtifact}
+          isUndoing={undo.isPending}
+          onUndo={() => undo.mutate(application.id)}
+          undoError={undo.error}
+        />
       ) : (
         <ApplyGate
           hasVerification={verificationItems.length > 0}
@@ -202,10 +246,219 @@ function ApplyGate({
   );
 }
 
-function ApplicationResult({
+const UNDO_STATUS_COPY: Record<string, string> = {
+  undone_guard_passed:
+    "Content was restored to the live working tree and Guard passed.",
+  undone_guard_failed:
+    "Content was restored to the live working tree, but Guard failed. Nothing was reverted.",
+  undo_refused:
+    "Undo was refused before writing. The live working tree is unchanged.",
+  undo_failed:
+    "Undo partially restored the live working tree. Review the per-file outcomes before doing anything else.",
+};
+
+const UNDO_ACTION_COPY: Record<string, string> = {
+  restored: "Prior content restored",
+  deleted: "Created file removed",
+  refused: "Refused",
+  failed: "Write failed",
+};
+
+function undoStatusTone(
+  status: string,
+): "passed" | "failed" | "warning" | "running" {
+  if (status === "undone_guard_passed") return "passed";
+  if (status === "undo_refused") return "warning";
+  return "failed";
+}
+
+const APPLIED_OUTCOMES: readonly string[] = [
+  "applied_guard_passed",
+  "applied_guard_failed",
+  "applied_guard_unavailable",
+];
+
+function UndoSection({
   application,
+  undoArtifact,
+  isUndoing,
+  onUndo,
+  undoError,
 }: {
   application: ApplicationArtifact;
+  undoArtifact: UndoArtifact | undefined;
+  isUndoing: boolean;
+  onUndo: () => void;
+  undoError: unknown;
+}) {
+  const isEligible =
+    APPLIED_OUTCOMES.includes(application.status) && !undoArtifact;
+  const hasTruncated = application.undo.files.some(
+    (file) =>
+      file.changeType !== "create" && file.priorTruncated,
+  );
+
+  if (undoArtifact) {
+    return <UndoResult undo={undoArtifact} />;
+  }
+
+  if (!isEligible) return null;
+
+  return (
+    <div className="proposal-application__undo-action">
+      <div className="proposal-review__files-heading">
+        <strong>Undo application</strong>
+      </div>
+      <p>
+        Restore prior content and remove created files. The live working tree must
+        still match the recorded applied digests. If files have changed since
+        application, undo will be refused before any write.
+      </p>
+      {hasTruncated ? (
+        <p className="proposal-application__blocked" role="status">
+          Undo metadata is incomplete — some files have truncated prior content
+          and require external recovery.
+        </p>
+      ) : (
+        <button
+          className="button button--primary"
+          type="button"
+          onClick={onUndo}
+          disabled={isUndoing}
+        >
+          {isUndoing ? "Undoing…" : "Undo application"}
+        </button>
+      )}
+      {undoError ? <ProblemDetailsView error={undoError} /> : null}
+    </div>
+  );
+}
+
+function UndoResult({ undo }: { undo: UndoArtifact }) {
+  return (
+    <div className="proposal-application__undo-result" aria-live="polite">
+      <div className="proposal-review__files-heading">
+        <strong>Undo result</strong>
+        <span className={`badge badge--${undoStatusTone(undo.status)}`}>
+          {undo.status}
+        </span>
+      </div>
+      <p className="proposal-application__outcome">
+        {UNDO_STATUS_COPY[undo.status] ?? undo.status}
+      </p>
+      <dl className="proposal-review__lineage">
+        <div>
+          <dt>Undo</dt>
+          <dd>
+            <code>{undo.id}</code>
+          </dd>
+        </div>
+        <div>
+          <dt>Application</dt>
+          <dd>
+            <code>{undo.applicationId}</code>
+          </dd>
+        </div>
+        <div>
+          <dt>Finished</dt>
+          <dd>
+            {formatTimestamp(undo.finishedAt)} · {undo.durationMs} ms
+          </dd>
+        </div>
+      </dl>
+
+      {undo.fileOutcomes.length > 0 ? (
+        <div className="proposal-review__files">
+          <div className="proposal-review__files-heading">
+            <strong>File outcomes</strong>
+            <span>{undo.fileOutcomes.length}</span>
+          </div>
+          {undo.fileOutcomes.map((outcome) => (
+            <div
+              key={`${outcome.changeType}:${outcome.path}`}
+              className="proposal-application__file"
+            >
+              <code>{outcome.path}</code>
+              <span className={`badge badge--${outcome.changeType}`}>
+                {outcome.changeType}
+              </span>
+              <span
+                className={`badge badge--${outcome.undone ? "passed" : "failed"}`}
+              >
+                {UNDO_ACTION_COPY[outcome.action] ?? outcome.action}
+              </span>
+              <span className="proposal-application__digest">
+                {shortDigest(outcome.observedLiveDigest, "—")} →{" "}
+                {shortDigest(outcome.priorDigestRestored, "—")}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {undo.guard ? (
+        <div className="proposal-application__guard">
+          <div className="proposal-review__files-heading">
+            <strong>Guard after undo</strong>
+            <span className={`badge badge--${undo.guard.status}`}>
+              {undo.guard.status}
+              {undo.guard.blocking ? " · blocking" : ""}
+            </span>
+          </div>
+          <p className="proposal-application__guard-summary">
+            {undo.guard.summary.passedCount} passed ·{" "}
+            {undo.guard.summary.failedCount} failed ·{" "}
+            {undo.guard.summary.errorCount} errored
+          </p>
+          {undo.guard.checks.map((check) => (
+            <details key={check.kind} className="proposal-file-change">
+              <summary>
+                <code>{check.kind}</code>
+                <span className={`badge badge--${check.status}`}>
+                  {check.status}
+                </span>
+              </summary>
+              <dl>
+                <div>
+                  <dt>Summary</dt>
+                  <dd>{check.summary}</dd>
+                </div>
+                <div>
+                  <dt>Exit / duration</dt>
+                  <dd>
+                    {check.exitCode ?? "—"} · {check.durationMs} ms
+                  </dd>
+                </div>
+              </dl>
+              {check.outputExcerpt ? (
+                <pre className="proposal-file-change__content">
+                  <code>{check.outputExcerpt}</code>
+                </pre>
+              ) : null}
+            </details>
+          ))}
+        </div>
+      ) : undo.guardUnavailableReason ? (
+        <p className="proposal-application__no-guard" role="status">
+          {undo.guardUnavailableReason}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function ApplicationResult({
+  application,
+  undoArtifact,
+  isUndoing,
+  onUndo,
+  undoError,
+}: {
+  application: ApplicationArtifact;
+  undoArtifact: UndoArtifact | undefined;
+  isUndoing: boolean;
+  onUndo: () => void;
+  undoError: unknown;
 }) {
   const restorable = application.undo.files.filter(
     (file) => !file.priorTruncated,
@@ -331,6 +584,14 @@ function ApplicationResult({
           </div>
         ))}
       </div>
+
+      <UndoSection
+        application={application}
+        undoArtifact={undoArtifact}
+        isUndoing={isUndoing}
+        onUndo={onUndo}
+        undoError={undoError}
+      />
 
       <p className="proposal-review__decision" role="status">
         Applied to the live working tree only. No commit, stage, or push was

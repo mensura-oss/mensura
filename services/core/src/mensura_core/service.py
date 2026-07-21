@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from mensura_core.context_pack_models import ContextPackManifest
 from mensura_core.context_pack_repositories import ContextPackRepository
+from mensura_core.event_publisher import EventPublisher, MensuraEvent
 from mensura_core.exceptions import (
     ContextPackNotFoundError,
     ContextPackWorkspaceMismatchError,
@@ -68,6 +69,7 @@ class CoreService:
         *,
         id_factory: IdFactory = uuid4,
         clock: Clock = utc_now,
+        event_publisher: EventPublisher | None = None,
     ) -> None:
         self._repository = repository
         self._git_repository = git_repository
@@ -75,6 +77,7 @@ class CoreService:
         self._providers = providers
         self._id_factory = id_factory
         self._clock = clock
+        self._event_publisher = event_publisher
 
     def list_workspaces(self) -> Sequence[Workspace]:
         return self._repository.list_workspaces()
@@ -254,6 +257,7 @@ class CoreService:
         )
         if not self._repository.replace_run_if_status(succeeded, RunStatus.RUNNING):
             raise RuntimeError(f"Run '{run.id}' left running state during provider execution.")
+        self._publish_run_event(succeeded)
         return succeeded
 
     @staticmethod
@@ -303,6 +307,7 @@ class CoreService:
         )
         if not self._repository.replace_run_if_status(failed, RunStatus.RUNNING):
             raise RuntimeError(f"Run '{running.id}' left running state during provider execution.")
+        self._publish_run_event(failed)
 
     @staticmethod
     def _running_provider(running: Run) -> RunProviderMetadata:
@@ -315,6 +320,31 @@ class CoreService:
         finished_at = max(started_at, observed)
         duration_ms = int((finished_at - started_at).total_seconds() * 1000)
         return finished_at, min(duration_ms, 86_400_000)
+
+    def _publish_run_event(self, run: Run) -> None:
+        if self._event_publisher is None:
+            return
+        try:
+            task = self._repository.get_task(run.task_id)
+            workspace_id = task.workspace_id if task else None
+        except Exception:
+            workspace_id = None
+        summary = f"Run {run.status}."
+        if run.execution is not None:
+            if run.execution.result is not None:
+                summary = run.execution.result.task_summary[:200]
+            elif run.execution.failure is not None:
+                summary = run.execution.failure.summary[:200]
+        self._event_publisher.publish(
+            MensuraEvent(
+                event_type="run.status.changed",
+                workspace_id=workspace_id,
+                entity_type="run",
+                entity_id=run.id,
+                status=run.status.value,
+                summary=summary,
+            )
+        )
 
     def _require_workspace(self, workspace_id: UUID) -> Workspace:
         workspace = self._repository.get_workspace(workspace_id)

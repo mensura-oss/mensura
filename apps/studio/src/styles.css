@@ -2271,3 +2271,50 @@ input:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+
+.job-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.job-item {
+  border: 1px solid #1e293b;
+  border-radius: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  background: #0d1420;
+}
+
+.job-item__header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.job-item__target {
+  color: #7f8ba3;
+  font-size: 0.85rem;
+}
+
+.job-item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.35rem;
+  color: #7f8ba3;
+  font-size: 0.8rem;
+}
+
+.job-item__result {
+  margin-top: 0.35rem;
+  color: #86efac;
+  font-size: 0.82rem;
+}
+
+.job-item__error {
+  margin-top: 0.35rem;
+  color: #fca5a5;
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}

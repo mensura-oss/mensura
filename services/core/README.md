@@ -1,6 +1,6 @@
 # Mensura Core
 
-Mensura Core is the HTTP boundary for tasks and controlled agent execution. The current service implements versioned resource contracts, process-local resource storage, read-only local Git inspection, deterministic Vault inventory/retrieval, immutable context-pack assembly, a manual Ruff/pytest Guard runner, the credential-free deterministic provider, one optional OpenAI BYOK adapter with bounded structured results, separately persisted write-isolated change-proposal review, isolated sandbox verification of approved proposals in temporary Git worktrees, and an explicit digest-checked apply-to-live step that writes an approved, verified proposal to the live working tree with atomic writes and a separate audit artifact. It never commits, stages, pushes, or checks out; it does not apply patches blindly, generate embeddings, implement a full policy engine, execute undo, or persist run/proposal/verification/application resources across restarts.
+Mensura Core is the HTTP boundary for tasks and controlled agent execution. The current service implements versioned resource contracts, durable SQLite-backed persistence, read-only local Git inspection, deterministic Vault inventory/retrieval, immutable context-pack assembly, a manual Ruff/pytest Guard runner, the credential-free deterministic provider, one optional OpenAI BYOK adapter with bounded structured results, separately persisted write-isolated change-proposal review, isolated sandbox verification of approved proposals in temporary Git worktrees, an explicit digest-checked apply-to-live step, bounded digest-guarded undo execution, safe local backup and restore, a durable SQLite-backed background job queue with an in-process worker, and live Server-Sent Event (SSE) status updates. It never commits, stages, pushes, or checks out.
 
 ## Requirements
 
@@ -290,6 +290,53 @@ Apply-to-live additionally uses:
 
 Problem URNs are stable machine identifiers. They can be replaced by resolvable HTTPS documentation only as a versioned compatibility decision.
 
+## Durable background jobs
+
+Long-running operations can run as durable, persisted jobs instead of inline within the request:
+
+| Method | Path | Result |
+|---|---|---|
+| `POST` | `/api/v1/jobs` | Enqueue a job (`201` + queued `Job` + `Location`) |
+| `GET` | `/api/v1/jobs?workspaceId=&status=&jobType=` | List jobs, newest first |
+| `GET` | `/api/v1/jobs/{job_id}` | Get one job |
+
+The enqueue body is a discriminated union on `jobType`: `{ "jobType": "proposal_verification", "proposalId": "…" }`, `{ "jobType": "application_apply", "proposalId": "…", "verificationId": "…" }`, `{ "jobType": "application_undo", "applicationId": "…" }`, or `{ "jobType": "backup_create", "label": "…"? }`. Enqueue performs a light existence check on the target (a missing proposal/application returns the usual `404`), resolves the owning `workspaceId`, and persists a `Job` schema-v1 record with `jobType`, `targetEntityType`/`targetEntityId`, optional `workspaceId`, `status` (`queued | running | succeeded | failed`), `attemptCount`, a bounded reference `payload` (identifiers and a label only), `resultEntityType`/`resultEntityId`, a bounded `lastError`, and `createdAt`/`startedAt`/`finishedAt`.
+
+**Existing synchronous endpoints are unchanged.** The job API is purely additive; `…/verify`, `…/apply`, `…/undo`, and `POST /backups` keep their exact `201`+artifact semantics. Enqueue is opt-in durable async.
+
+A single in-process `JobWorker`, started from the FastAPI lifespan in production (`create_sql_app`), drains the queue. Claiming is an atomic compare-and-set (`UPDATE … SET status='running' WHERE id=? AND status='queued'`), so only one worker ever claims a job. The worker invokes the **same** service method the synchronous endpoint calls, so every digest/Guard/path/single-use safety check is preserved—no new provider or Git capability is introduced. Jobs are orchestration only: a job `succeeded` means the operation ran to completion and produced its artifact, while the artifact's own status still records the domain outcome (a `guard_failed` verification or `applied_guard_failed` application still yields a `succeeded` job). Only pre-write refusals that raise a domain error (drift, unsafe path, not-approved, already-applied, ineligible undo) mark the job `failed` with a bounded summary.
+
+**Restart recovery.** Queued jobs persist in SQLite and are picked up by the worker after a restart. At startup, before the worker runs, any job left `running` by an interrupted process is atomically transitioned to `failed` with an honest "interrupted by a Core restart; the operation's outcome is unknown—inspect the target artifact and re-enqueue if needed" summary. This is the safe choice over auto-requeue: it never produces duplicate backups or verification artifacts and never silently re-applies. Automatic retries are deferred (`attemptCount` is recorded for forward-compatibility); restore stays explicit/synchronous and is never queued.
+
+## Server-Sent Events (SSE)
+
+Core exposes a bounded one-way event stream for live status updates:
+
+| Method | Path | Result |
+|---|---|---|
+| `GET` | `/api/v1/events/stream?workspaceId=` | `text/event-stream` with live events |
+
+### Event envelope
+
+Each event carries a compact `MensuraEvent` payload with `eventId`, `eventType`, `occurredAt`, optional `workspaceId`, `entityType`, `entityId`, `status`, and a `summary` (≤200 chars). No file contents, artifact bodies, diffs, or patches are streamed.
+
+### Supported event types
+
+- `run.status.changed` — emitted when a run transitions to `succeeded` or `failed`
+- `verification.created` — emitted when a sandbox verification completes
+- `application.created` — emitted when an application to the live tree completes
+- `undo.created` — emitted when an undo operation completes or is refused
+- `backup.created` — emitted when a database backup completes
+- `job.status.changed` — emitted when a background job is enqueued, claimed, or reaches a terminal state
+
+### Reconnection and replay
+
+The stream emits an initial `connected` event with the buffer size. Clients can send a `Last-Event-Id` header to replay missed events from the in-memory buffer (last 100 events). SSE is a notification mechanism only — REST API remains the authoritative source of truth.
+
+### Filtering
+
+Pass `?workspaceId=` to receive only events scoped to that workspace. Without the filter, all events are streamed.
+
 ## Storage boundary
 
-Resource routers depend on `CoreService`; provider routes use `ProviderRegistry`; Guard, Vault, context-pack, change-proposal, verification, and application routes retain dedicated services. Services use replaceable storage/config/credential/runner/Git/filesystem/provider/sandbox protocols. Workspaces/tasks/runs, Guard results, Vault inventories, context packs, change proposals, verification artifacts, and application artifacts remain in memory. Only the non-secret OpenAI model setting and keyring credential survive Core restarts. Git/filesystem adapters provide read-only live inspection; provider adapters consume only persisted task/context objects; proposal materialization consumes only the persisted successful run plus its exact stored manifest. Isolated verification writes exclusively inside its temporary worktree before removing it. Explicit apply-to-live is the only flow that writes the live working tree, and it does so with digest checks and atomic replaces after every precondition passes—still without any Git command. External filesystem changes can make inventory/context capture best-effort, but executing a run or creating/reviewing/verifying its proposal does not write the repository.
+Resource routers depend on `CoreService`; provider routes use `ProviderRegistry`; Guard, Vault, context-pack, change-proposal, verification, application, undo, backup, and event routes retain dedicated services. Services use replaceable storage/config/credential/runner/Git/filesystem/provider/sandbox protocols. Workspaces/tasks/runs, Guard results, Vault inventories, context packs, change proposals, verification artifacts, application artifacts, undo artifacts, backups, and background jobs are persisted in SQLite via SQLAlchemy 2.0 + Alembic migrations. Only the non-secret OpenAI model setting and keyring credential follow separate storage paths. Git/filesystem adapters provide read-only live inspection; provider adapters consume only persisted task/context objects; proposal materialization consumes only the persisted successful run plus its exact stored manifest. Isolated verification writes exclusively inside its temporary worktree before removing it. Explicit apply-to-live and undo write the live working tree, and both do so with digest checks and atomic replaces after every precondition passes—still without any Git command. External filesystem changes can make inventory/context capture best-effort, but executing a run or creating/reviewing/verifying its proposal does not write the repository.

@@ -1,7 +1,11 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useCoreClient } from "../api/CoreClientProvider";
+import { BackupPanel } from "../features/backup/BackupPanel";
 import { ContextPackPanel } from "../features/context-packs/ContextPackPanel";
+import { useLiveEvents } from "../features/events/useLiveEvents";
 import { HealthPanel } from "../features/health/HealthPanel";
 import { GuardPanel } from "../features/guard/GuardPanel";
+import { JobsPanel } from "../features/jobs/JobsPanel";
 import { RunInspector } from "../features/runs/RunInspector";
 import { RepositorySummaryPanel } from "../features/repository/RepositorySummaryPanel";
 import { ProviderSettingsPanel } from "../features/providers/ProviderSettingsPanel";
@@ -15,6 +19,9 @@ import { useActiveWorkspaceId } from "./useActiveWorkspaceId";
 export function App() {
   const client = useCoreClient();
   const [activeWorkspaceId, setActiveWorkspaceId] = useActiveWorkspaceId();
+  const queryClient = useQueryClient();
+
+  useLiveEvents({ workspaceId: activeWorkspaceId, queryClient });
 
   return (
     <AppShell baseUrl={client.baseUrl}>
@@ -60,6 +67,12 @@ export function App() {
         </div>
         <TaskInspector />
         <RunInspector />
+        <div className="dashboard-grid__backup">
+          <BackupPanel />
+        </div>
+        <div className="dashboard-grid__jobs">
+          <JobsPanel />
+        </div>
       </div>
     </AppShell>
   );

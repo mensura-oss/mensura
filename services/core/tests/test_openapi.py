@@ -34,6 +34,15 @@ def test_openapi_exposes_the_implemented_v1_contract(client: TestClient) -> None
         "/api/v1/change-proposals/{proposal_id}/apply",
         "/api/v1/applications/{application_id}",
         "/api/v1/workspaces/{workspace_id}/applications",
+        "/api/v1/applications/{application_id}/undo",
+        "/api/v1/undos/{undo_id}",
+        "/api/v1/workspaces/{workspace_id}/undos",
+        "/api/v1/backups",
+        "/api/v1/backups/{backup_id}",
+        "/api/v1/backups/{backup_id}/restore",
+        "/api/v1/jobs",
+        "/api/v1/jobs/{job_id}",
+        "/api/v1/events/stream",
     }
 
 

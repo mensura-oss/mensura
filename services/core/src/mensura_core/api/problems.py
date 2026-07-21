@@ -21,6 +21,11 @@ from mensura_core.exceptions import (
     ApplicationVerificationNotFoundError,
     ApplicationVerificationNotPassedError,
     ApplicationWriteError,
+    BackupIntegrityError,
+    BackupNotCompletedError,
+    BackupNotFoundError,
+    BackupRestoreError,
+    BackupWriteError,
     ChangeProposalContentTooLargeError,
     ChangeProposalInvalidStateError,
     ChangeProposalNotFoundError,
@@ -36,6 +41,7 @@ from mensura_core.exceptions import (
     GuardExecutionError,
     GuardRunInProgressError,
     GuardRunNotFoundError,
+    JobNotFoundError,
     NotGitRepositoryError,
     ProposalVerificationContentIncompleteError,
     ProposalVerificationInProgressError,
@@ -53,6 +59,13 @@ from mensura_core.exceptions import (
     RunContextPackMissingError,
     RunInvalidStateError,
     StructuredResultInvalidError,
+    UndoAlreadyExistsError,
+    UndoLiveDriftError,
+    UndoMetadataIncompleteError,
+    UndoNotEligibleError,
+    UndoNotFoundError,
+    UndoUnsafePathError,
+    UndoWriteError,
     UnsupportedProviderError,
     UnsupportedRepositoryStateError,
     UnsupportedWorkspaceStateError,
@@ -123,6 +136,19 @@ APPLICATION_IN_PROGRESS_TYPE = "urn:mensura:problem:application-in-progress"
 APPLICATION_LIVE_DRIFT_TYPE = "urn:mensura:problem:application-live-drift"
 APPLICATION_UNSAFE_PATH_TYPE = "urn:mensura:problem:application-unsafe-path"
 APPLICATION_WRITE_FAILED_TYPE = "urn:mensura:problem:application-write-failed"
+UNDO_NOT_FOUND_TYPE = "urn:mensura:problem:undo-not-found"
+UNDO_NOT_ELIGIBLE_TYPE = "urn:mensura:problem:undo-not-eligible"
+UNDO_ALREADY_EXISTS_TYPE = "urn:mensura:problem:undo-already-exists"
+UNDO_METADATA_INCOMPLETE_TYPE = "urn:mensura:problem:undo-metadata-incomplete"
+UNDO_LIVE_DRIFT_TYPE = "urn:mensura:problem:undo-live-drift"
+UNDO_UNSAFE_PATH_TYPE = "urn:mensura:problem:undo-unsafe-path"
+UNDO_WRITE_FAILED_TYPE = "urn:mensura:problem:undo-write-failed"
+JOB_NOT_FOUND_TYPE = "urn:mensura:problem:job-not-found"
+BACKUP_NOT_FOUND_TYPE = "urn:mensura:problem:backup-not-found"
+BACKUP_NOT_COMPLETED_TYPE = "urn:mensura:problem:backup-not-completed"
+BACKUP_INTEGRITY_ERROR_TYPE = "urn:mensura:problem:backup-integrity-error"
+BACKUP_RESTORE_FAILED_TYPE = "urn:mensura:problem:backup-restore-failed"
+BACKUP_WRITE_FAILED_TYPE = "urn:mensura:problem:backup-write-failed"
 
 
 class InvalidParameter(BaseModel):
@@ -826,6 +852,162 @@ def install_problem_handlers(app: FastAPI) -> None:
             detail=error.detail,
         )
 
+    @app.exception_handler(UndoNotFoundError)
+    async def undo_not_found_handler(
+        request: Request, error: UndoNotFoundError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=404,
+            problem_type=UNDO_NOT_FOUND_TYPE,
+            title="Undo artifact not found",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(UndoNotEligibleError)
+    async def undo_not_eligible_handler(
+        request: Request, error: UndoNotEligibleError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=UNDO_NOT_ELIGIBLE_TYPE,
+            title="Application is not eligible for undo",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(UndoAlreadyExistsError)
+    async def undo_already_exists_handler(
+        request: Request, error: UndoAlreadyExistsError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=UNDO_ALREADY_EXISTS_TYPE,
+            title="Application already undone",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(UndoMetadataIncompleteError)
+    async def undo_metadata_incomplete_handler(
+        request: Request, error: UndoMetadataIncompleteError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=422,
+            problem_type=UNDO_METADATA_INCOMPLETE_TYPE,
+            title="Undo metadata is incomplete",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(UndoLiveDriftError)
+    async def undo_live_drift_handler(
+        request: Request, error: UndoLiveDriftError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=UNDO_LIVE_DRIFT_TYPE,
+            title="Live working tree drifted from the applied digest",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(UndoUnsafePathError)
+    async def undo_unsafe_path_handler(
+        request: Request, error: UndoUnsafePathError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=422,
+            problem_type=UNDO_UNSAFE_PATH_TYPE,
+            title="Undo target path is unsafe",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(UndoWriteError)
+    async def undo_write_failed_handler(
+        request: Request, error: UndoWriteError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=500,
+            problem_type=UNDO_WRITE_FAILED_TYPE,
+            title="Live working tree could not be restored by undo",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(JobNotFoundError)
+    async def job_not_found_handler(
+        request: Request, error: JobNotFoundError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=404,
+            problem_type=JOB_NOT_FOUND_TYPE,
+            title="Job not found",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(BackupNotFoundError)
+    async def backup_not_found_handler(
+        request: Request, error: BackupNotFoundError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=404,
+            problem_type=BACKUP_NOT_FOUND_TYPE,
+            title="Backup not found",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(BackupNotCompletedError)
+    async def backup_not_completed_handler(
+        request: Request, error: BackupNotCompletedError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=BACKUP_NOT_COMPLETED_TYPE,
+            title="Backup cannot be restored",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(BackupIntegrityError)
+    async def backup_integrity_handler(
+        request: Request, error: BackupIntegrityError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=422,
+            problem_type=BACKUP_INTEGRITY_ERROR_TYPE,
+            title="Backup integrity check failed",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(BackupRestoreError)
+    async def backup_restore_failed_handler(
+        request: Request, error: BackupRestoreError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=500,
+            problem_type=BACKUP_RESTORE_FAILED_TYPE,
+            title="Database restore failed",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(BackupWriteError)
+    async def backup_write_failed_handler(
+        request: Request, error: BackupWriteError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=500,
+            problem_type=BACKUP_WRITE_FAILED_TYPE,
+            title="Database backup failed",
+            detail=error.detail,
+        )
+
     @app.exception_handler(RequestValidationError)
     async def request_validation_handler(
         request: Request, error: RequestValidationError
@@ -919,8 +1101,29 @@ APPLICATION_UNSUPPORTED_RESPONSE = problem_response(
 APPLICATION_WRITE_RESPONSE = problem_response(
     500, "The live working tree could not be staged for application."
 )
+UNDO_CONFLICT_RESPONSE = problem_response(
+    409, "The application, live working tree, or undo state does not allow undo."
+)
+UNDO_UNSUPPORTED_RESPONSE = problem_response(
+    422, "The undo metadata or a target path cannot be processed."
+)
+UNDO_WRITE_RESPONSE = problem_response(
+    500, "The live working tree could not be restored by undo."
+)
 EXECUTION_CONFLICT_RESPONSE = problem_response(409, "The run cannot execute from current state.")
 PROVIDER_EXECUTION_RESPONSE = problem_response(502, "The provider execution did not succeed.")
 PROVIDER_CONFIGURATION_RESPONSE = problem_response(
     503, "Local provider settings or credential storage is unavailable."
+)
+BACKUP_CONFLICT_RESPONSE = problem_response(
+    409, "The backup cannot be restored from its current status."
+)
+BACKUP_INTEGRITY_RESPONSE = problem_response(
+    422, "The backup file failed integrity verification."
+)
+BACKUP_RESTORE_RESPONSE = problem_response(
+    500, "The database could not be restored from the backup."
+)
+BACKUP_WRITE_RESPONSE = problem_response(
+    500, "The database backup could not be created."
 )

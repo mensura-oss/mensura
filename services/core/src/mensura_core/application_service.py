@@ -23,6 +23,7 @@ from mensura_core.application_repositories import ApplicationRepository
 from mensura_core.application_writer import apply_proposal_changes
 from mensura_core.change_proposal_models import ChangeProposal, ChangeProposalStatus
 from mensura_core.change_proposal_repositories import ChangeProposalRepository
+from mensura_core.event_publisher import EventPublisher, MensuraEvent
 from mensura_core.exceptions import (
     ApplicationAlreadyExistsError,
     ApplicationContentIncompleteError,
@@ -75,6 +76,7 @@ class ChangeApplicationService:
         clock: Clock = utc_now,
         monotonic: Monotonic = perf_counter,
         head_resolver: HeadResolver = resolve_live_head,
+        event_publisher: EventPublisher | None = None,
     ) -> None:
         self._core_repository = core_repository
         self._proposal_repository = proposal_repository
@@ -86,6 +88,7 @@ class ChangeApplicationService:
         self._clock = clock
         self._monotonic = monotonic
         self._head_resolver = head_resolver
+        self._event_publisher = event_publisher
         self._active_workspaces: set[UUID] = set()
         self._active_lock = Lock()
 
@@ -118,6 +121,24 @@ class ChangeApplicationService:
         self._require_workspace(workspace_id)
         items = tuple(self._application_repository.list_for_workspace(workspace_id))
         return ApplicationCollection(items=items, total=len(items))
+
+    def _publish_application_event(self, application: ApplicationArtifact) -> None:
+        if self._event_publisher is None:
+            return
+        summary = (
+            f"Application {application.status.value}. "
+            f"Applied: {application.summary.applied_count} files."
+        )
+        self._event_publisher.publish(
+            MensuraEvent(
+                event_type="application.created",
+                workspace_id=application.workspace_id,
+                entity_type="application",
+                entity_id=application.id,
+                status=application.status.value,
+                summary=summary,
+            )
+        )
 
     def _apply_to_live(
         self,
@@ -173,6 +194,7 @@ class ChangeApplicationService:
             duration_ms=max(0, round((self._monotonic() - started) * 1000)),
         )
         self._application_repository.save_if_absent_for_proposal(application)
+        self._publish_application_event(application)
         return application
 
     def _run_live_guard(

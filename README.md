@@ -8,7 +8,7 @@ The repository is at the foundation stage. The current runnable components are `
 
 - `packages/shared-types`: shared domain, execution, change-proposal, verification, application, state-machine, and runtime plugin contracts.
 - `apps/studio`: Tauri 2/React desktop shell and typed Core client.
-- `services/core`: versioned FastAPI contracts, RFC 9457 errors, read-only Git/Vault adapters, immutable context-pack assembly, bounded Guard runner, deterministic plus optional OpenAI BYOK execution adapters, write-isolated proposal review, temporary Git-worktree verification sandboxes, explicit digest-checked apply-to-live with atomic writes and audit artifacts, local credential/config boundaries, in-memory resource storage, and API tests.
+- `services/core`: versioned FastAPI contracts, RFC 9457 errors, read-only Git/Vault adapters, immutable context-pack assembly, bounded Guard runner, deterministic plus optional OpenAI BYOK execution adapters, write-isolated proposal review, temporary Git-worktree verification sandboxes, explicit digest-checked apply-to-live with atomic writes and audit artifacts, bounded undo execution, safe SQLite backup/restore, a durable SQLite-backed background job queue with an in-process worker and restart recovery, live SSE status updates, local credential/config boundaries, durable SQLite persistence, and API tests.
 - `docs/agent_memory.md`: current architecture, audit, implementation journal, decisions, and ordered next tasks.
 - `mensura_*.md`: product, architecture, API, module, roadmap, and setup source specifications.
 - `LICENSE`: GNU AGPL v3.

@@ -3,8 +3,14 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from mensura_core.application_repositories import InMemoryApplicationRepository
+from mensura_core.change_proposal_repositories import InMemoryChangeProposalRepository
+from mensura_core.context_pack_repositories import InMemoryContextPackRepository
+from mensura_core.guard_repositories import InMemoryGuardRunRepository
 from mensura_core.main import create_app
 from mensura_core.repositories import InMemoryCoreRepository
+from mensura_core.vault_repositories import InMemoryVaultInventoryRepository
+from mensura_core.verification_repositories import InMemoryProposalVerificationRepository
 
 
 def create_workspace(client: TestClient, *, root_path: str = "/tmp/mensura-project") -> dict:
@@ -280,7 +286,17 @@ def test_unexpected_errors_are_generic_problem_details() -> None:
             raise RuntimeError("internal storage detail")
 
     with TestClient(
-        create_app(FailingRepository()), raise_server_exceptions=False
+        create_app(
+            FailingRepository(),
+            guard_run_repository=InMemoryGuardRunRepository(),
+            vault_inventory_repository=InMemoryVaultInventoryRepository(),
+            context_pack_repository=InMemoryContextPackRepository(),
+            change_proposal_repository=InMemoryChangeProposalRepository(),
+            verification_repository=InMemoryProposalVerificationRepository(),
+            application_repository=InMemoryApplicationRepository(),
+            run_migrations_on_startup=False,
+        ),
+        raise_server_exceptions=False,
     ) as failing_client:
         response = failing_client.get("/api/v1/workspaces")
 

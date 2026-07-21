@@ -2,19 +2,25 @@ import type {
   ApplicationArtifact,
   ApplicationCollection,
   ApplyChangeProposalRequest,
+  BackupArtifact,
+  BackupCollection,
   ChangeProposal,
   ChangeProposalCollection,
   ContextPackCollection,
   ContextPackManifest,
+  CreateBackupRequest,
   CreateWorkspaceRequest,
   CreateTaskRequest,
   CreateContextPackRequest,
   CreateContextPackResponse,
   CreateChangeProposalResponse,
   CreateRunRequest,
+  EnqueueJobRequest,
   HealthResponse,
   GuardRunRequest,
   GuardRunResponse,
+  Job,
+  JobCollection,
   ProblemDetails,
   ProposalVerification,
   ProposalVerificationCollection,
@@ -23,8 +29,11 @@ import type {
   ConfigureOpenAIProviderRequest,
   ExecuteRunRequest,
   RepositorySummary,
+  RestoreBackupResponse,
   Run,
   Task,
+  UndoArtifact,
+  UndoCollection,
   VaultFileCollection,
   VaultFilePreview,
   VaultInventorySnapshot,
@@ -54,6 +63,16 @@ export interface CoreClient {
   ): Promise<ApplicationArtifact>;
   getApplication(applicationId: string): Promise<ApplicationArtifact>;
   listWorkspaceApplications(workspaceId: string): Promise<ApplicationCollection>;
+  undoApplication(applicationId: string): Promise<UndoArtifact>;
+  getUndo(undoId: string): Promise<UndoArtifact>;
+  listWorkspaceUndos(workspaceId: string): Promise<UndoCollection>;
+  createBackup(input?: CreateBackupRequest): Promise<BackupArtifact>;
+  listBackups(): Promise<BackupCollection>;
+  getBackup(backupId: string): Promise<BackupArtifact>;
+  restoreBackup(backupId: string): Promise<RestoreBackupResponse>;
+  enqueueJob(input: EnqueueJobRequest): Promise<Job>;
+  listJobs(): Promise<JobCollection>;
+  getJob(jobId: string): Promise<Job>;
   createRun(taskId: string, input: CreateRunRequest): Promise<Run>;
   executeRun(runId: string, input: ExecuteRunRequest): Promise<Run>;
   configureOpenAIProvider(
@@ -206,6 +225,56 @@ export function createCoreClient(options?: {
       return request<ApplicationCollection>(
         `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/applications`,
       );
+    },
+    undoApplication(applicationId) {
+      return request<UndoArtifact>(
+        `/api/v1/applications/${encodeURIComponent(applicationId)}/undo`,
+        { method: "POST" },
+      );
+    },
+    getUndo(undoId) {
+      return request<UndoArtifact>(
+        `/api/v1/undos/${encodeURIComponent(undoId)}`,
+      );
+    },
+    listWorkspaceUndos(workspaceId) {
+      return request<UndoCollection>(
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/undos`,
+      );
+    },
+    createBackup(input = {}) {
+      return request<BackupArtifact>("/api/v1/backups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+    },
+    listBackups() {
+      return request<BackupCollection>("/api/v1/backups");
+    },
+    getBackup(backupId) {
+      return request<BackupArtifact>(
+        `/api/v1/backups/${encodeURIComponent(backupId)}`,
+      );
+    },
+    restoreBackup(backupId) {
+      return request<RestoreBackupResponse>(
+        `/api/v1/backups/${encodeURIComponent(backupId)}/restore`,
+        { method: "POST" },
+      );
+    },
+    enqueueJob(input) {
+      return request<Job>("/api/v1/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+    },
+    listJobs() {
+      return request<JobCollection>("/api/v1/jobs");
+    },
+    getJob(jobId) {
+      return request<Job>(`/api/v1/jobs/${encodeURIComponent(jobId)}`);
     },
     buildVaultInventory(workspaceId) {
       return request<VaultInventorySnapshot>(
