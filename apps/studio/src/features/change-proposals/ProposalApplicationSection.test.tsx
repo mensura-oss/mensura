@@ -45,7 +45,7 @@ describe("ProposalApplicationSection", () => {
       ),
     ).toBeVisible();
     const applyButton = await screen.findByRole("button", {
-      name: "Apply to live working tree",
+      name: "Apply (direct)",
     });
     await user.click(applyButton);
 
@@ -75,7 +75,7 @@ describe("ProposalApplicationSection", () => {
       await screen.findByText(/unavailable until this approved proposal has a passing/),
     ).toBeVisible();
     expect(
-      screen.queryByRole("button", { name: "Apply to live working tree" }),
+      screen.queryByRole("button", { name: "Apply (direct)" }),
     ).toBeNull();
   });
 
@@ -95,7 +95,7 @@ describe("ProposalApplicationSection", () => {
     ).toBeVisible();
     expect(screen.getByText(/0 passed · 2 failed/)).toBeVisible();
     expect(
-      screen.queryByRole("button", { name: "Apply to live working tree" }),
+      screen.queryByRole("button", { name: "Apply (direct)" }),
     ).toBeNull();
   });
 
@@ -121,14 +121,14 @@ describe("ProposalApplicationSection", () => {
       client,
     );
     await user.click(
-      await screen.findByRole("button", { name: "Apply to live working tree" }),
+      await screen.findByRole("button", { name: "Apply (direct)" }),
     );
 
     expect(
       await screen.findByText("Live working tree drifted from the verified basis"),
     ).toBeVisible();
     expect(
-      screen.getByRole("button", { name: "Apply to live working tree" }),
+      screen.getByRole("button", { name: "Apply (direct)" }),
     ).toBeEnabled();
   });
 });

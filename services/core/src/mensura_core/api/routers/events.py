@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+from collections.abc import AsyncIterator
 from typing import Annotated
 from uuid import UUID
 
@@ -24,7 +25,7 @@ async def _stream_events(
     publisher: InMemoryEventPublisher,
     workspace_id: UUID | None,
     last_event_id: str | None,
-) -> None:
+) -> AsyncIterator[dict[str, str]]:
     queue = publisher.subscribe()
 
     connected_event = json.dumps(

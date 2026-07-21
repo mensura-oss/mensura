@@ -201,7 +201,9 @@ def test_undo_refuses_when_live_file_drifted(tmp_path: Path) -> None:
     ) as client:
         application = apply_and_return_application(client, tmp_path)
 
-        (tmp_path / "src" / "example.py").write_text("print('edited after apply')\n", encoding="utf-8")
+        (tmp_path / "src" / "example.py").write_text(
+            "print('edited after apply')\n", encoding="utf-8"
+        )
 
         response = client.post(f"/api/v1/applications/{application['id']}/undo")
 
@@ -212,7 +214,9 @@ def test_undo_refuses_when_live_file_drifted(tmp_path: Path) -> None:
     assert undo["guard"] is None
     assert "drifted" in (undo.get("guardUnavailableReason") or "")
     # The live file was not touched.
-    assert (tmp_path / "src" / "example.py").read_text(encoding="utf-8") == "print('edited after apply')\n"
+    assert (tmp_path / "src" / "example.py").read_text(
+        encoding="utf-8"
+    ) == "print('edited after apply')\n"
 
 
 def test_undo_is_single_use_per_application(tmp_path: Path) -> None:

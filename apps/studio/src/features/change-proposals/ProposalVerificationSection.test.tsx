@@ -34,7 +34,7 @@ describe("ProposalVerificationSection", () => {
       screen.getByText(/live branch, working\s+tree, and repository files are never written/),
     ).toBeVisible();
     await user.click(
-      screen.getByRole("button", { name: "Verify in isolated sandbox" }),
+      screen.getByRole("button", { name: "Verify (direct)" }),
     );
 
     expect(verify).toHaveBeenCalledWith(approvedProposal.id);
@@ -51,7 +51,7 @@ describe("ProposalVerificationSection", () => {
       screen.getByText(/The live repository remains untouched/),
     ).toBeVisible();
     expect(
-      screen.getByRole("button", { name: "Verify again in isolated sandbox" }),
+      screen.getByRole("button", { name: "Verify again (direct)" }),
     ).toBeEnabled();
   });
 
@@ -71,7 +71,7 @@ describe("ProposalVerificationSection", () => {
     ).toBeVisible();
     expect(screen.getByText(/0 passed · 2 failed/)).toBeVisible();
     expect(
-      screen.getByRole("button", { name: "Verify again in isolated sandbox" }),
+      screen.getByRole("button", { name: "Verify again (direct)" }),
     ).toBeEnabled();
   });
 
@@ -94,12 +94,12 @@ describe("ProposalVerificationSection", () => {
       client,
     );
     await user.click(
-      await screen.findByRole("button", { name: "Verify in isolated sandbox" }),
+      await screen.findByRole("button", { name: "Verify (direct)" }),
     );
 
     expect(await screen.findByText("Not a Git repository")).toBeVisible();
     expect(
-      screen.getByRole("button", { name: "Verify in isolated sandbox" }),
+      screen.getByRole("button", { name: "Verify (direct)" }),
     ).toBeEnabled();
   });
 });

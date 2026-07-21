@@ -28,8 +28,10 @@ Run the quality checks:
 Start the API:
 
 ```sh
-.venv/bin/python -m uvicorn mensura_core.main:app --reload
+.venv/bin/python -m uvicorn mensura_core.main:create_sql_app --factory --reload
 ```
+
+`create_sql_app` is the durable entry point: it applies Alembic migrations, uses the SQLite-backed repositories (`~/.mensura/core.db`, overridable via `MENSURA_DATABASE_URL`), and starts the in-process background job worker. The bare `mensura_core.main:app` target is an ephemeral in-memory variant for quick checks only and does not persist across restarts. The `mensura-core` console script runs the same durable app without `--reload`.
 
 OpenAPI JSON is available at `http://127.0.0.1:8000/openapi.json` and Swagger UI at `http://127.0.0.1:8000/docs`.
 
@@ -44,13 +46,13 @@ JSON property names use camelCase. Resource identifiers are UUIDs and timestamps
 | `POST` | `/api/v1/workspaces` | Creates a workspace and returns `201` |
 | `GET` | `/api/v1/workspaces/{workspace_id}/repository` | Read-only branch/status/path metadata for the workspace root |
 | `POST` | `/api/v1/workspaces/{workspace_id}/guard/runs` | Runs configured lint/test checks synchronously and returns `201` |
-| `GET` | `/api/v1/workspaces/{workspace_id}/guard/runs/latest` | Returns the latest completed in-memory Guard result |
+| `GET` | `/api/v1/workspaces/{workspace_id}/guard/runs/latest` | Returns the latest completed Guard result |
 | `POST` | `/api/v1/workspaces/{workspace_id}/vault/inventory` | Builds/replaces a deterministic inventory and returns `201` |
-| `GET` | `/api/v1/workspaces/{workspace_id}/vault/inventory` | Returns the latest in-memory inventory summary |
+| `GET` | `/api/v1/workspaces/{workspace_id}/vault/inventory` | Returns the latest inventory summary |
 | `GET` | `/api/v1/workspaces/{workspace_id}/vault/files` | Returns sorted file metadata with optional filters |
 | `GET` | `/api/v1/workspaces/{workspace_id}/vault/files/content?path=...` | Returns one bounded UTF-8 preview |
 | `POST` | `/api/v1/workspaces/{workspace_id}/context-packs` | Creates or reopens a deterministic immutable pack and returns `201` |
-| `GET` | `/api/v1/workspaces/{workspace_id}/context-packs` | Lists in-memory immutable pack summaries |
+| `GET` | `/api/v1/workspaces/{workspace_id}/context-packs` | Lists immutable pack summaries |
 | `GET` | `/api/v1/workspaces/{workspace_id}/context-packs/{context_pack_id}` | Returns the exact immutable manifest |
 | `GET` | `/api/v1/tasks/{task_id}` | Returns one task |
 | `POST` | `/api/v1/tasks` | Creates a ready task in an existing workspace |
@@ -99,7 +101,7 @@ The implemented state machine is exactly `queued -> running -> succeeded | faile
 
 The optional `OpenAIReviewProvider` calls the Responses API with `store: false`, no tools, input truncation disabled, a 1,200-token output cap, and strict JSON Schema. The code-controlled `review.v2` mapping serializes only the persisted Task and exact immutable manifest, including already bounded captured previews. It adds a compact proposal draft with summary, rationale, and at most 16 create/modify/delete text suggestions; an empty list is valid. Core parses and locally validates the model payload, then attaches context counts/digests derived from the manifest rather than trusting model claims. It does not read the repository during execution or expose prompts, raw upstream responses, or credentials in the run result. `review.v1` remains defined with its original no-file-modification meaning.
 
-Provider identity is visible as `providerId`, `providerKind`, `adapterId`, `adapterVersion`, nullable `model`, and `promptVersion`. Provider and validation failures persist a failed run with a closed safe code/summary before returning RFC 9457 Problem Details; exception, upstream body, credential, and schema internals are not exposed. Unsupported or unconfigured selection occurs before claim and leaves the run queued. A selected OpenAI failure never silently changes to deterministic. The HTTP action is synchronous through FastAPI's worker-thread handling. Background workers, brokers, streaming/SSE, retries, additional vendors/prompts, repository changes, and orchestration remain deferred.
+Provider identity is visible as `providerId`, `providerKind`, `adapterId`, `adapterVersion`, nullable `model`, and `promptVersion`. Provider and validation failures persist a failed run with a closed safe code/summary before returning RFC 9457 Problem Details; exception, upstream body, credential, and schema internals are not exposed. Unsupported or unconfigured selection occurs before claim and leaves the run queued. A selected OpenAI failure never silently changes to deterministic. The `POST …/execute` action itself is synchronous through FastAPI's worker-thread handling and has no run-level streaming or retry. Durable background jobs, live SSE status updates, and explicit single-retry of failed jobs exist as separate features (documented below); additional provider vendors/prompts and multi-agent orchestration remain deferred.
 
 ## Write-isolated change proposals
 
@@ -127,7 +129,7 @@ Each verification is a separate immutable `ProposalVerification` schema-v1 artif
 
 Application is digest-checked and all-or-nothing. Phase one resolves every safe live path (refusing absolute paths, `..` components, and symlinked parents) and compares each live file's current digest against the proposal's captured `beforeDigest` (create targets must be absent); any drift or unsafe path refuses the whole application before writing. Phase two stages every create/modify body to a same-directory temporary file with `flush`+`fsync`, then commits atomic `os.replace`/`os.unlink`. Applied content is the proposal's exact verified text—never re-generated and never a provider call. No `git add`, commit, push, checkout, or reset is ever run; the changes simply appear as ordinary working-tree edits. After a successful write Guard re-runs against the live tree.
 
-Each application is a separate immutable `ApplicationArtifact` schema-v1 record referencing proposal, verification, run, task, workspace, and context lineage, with a closed status of `applied_guard_passed`, `applied_guard_failed`, `applied_guard_unavailable` (written, but Guard could not execute—recorded, never hidden), or `application_failed` (a rare partial write recorded per file). It carries `live_working_tree` target metadata (live HEAD, verification commit, HEAD-moved flag), a compact bounded Guard result, per-file applied results (expected/live-before/after/applied digests plus a closed `applied | write_failed | not_attempted` reason), a summary, and undo metadata (per-file prior existence/digest/bounded prior text with a truncation flag and applied digest). Undo metadata is captured for a future undo feature; undo execution is not implemented. An artifact exists only when the live tree was written.
+Each application is a separate immutable `ApplicationArtifact` schema-v1 record referencing proposal, verification, run, task, workspace, and context lineage, with a closed status of `applied_guard_passed`, `applied_guard_failed`, `applied_guard_unavailable` (written, but Guard could not execute—recorded, never hidden), or `application_failed` (a rare partial write recorded per file). It carries `live_working_tree` target metadata (live HEAD, verification commit, HEAD-moved flag), a compact bounded Guard result, per-file applied results (expected/live-before/after/applied digests plus a closed `applied | write_failed | not_attempted` reason), a summary, and undo metadata (per-file prior existence/digest/bounded prior text with a truncation flag and applied digest). Undo metadata is consumed by the separate digest-guarded undo flow (documented below). An artifact exists only when the live tree was written.
 
 ## Local BYOK configuration
 
@@ -148,7 +150,7 @@ The response model has no patch, hunk, blob, line, file-content, command, remote
 
 ## Vault v1 inventory and retrieval
 
-Vault inventory is manual, synchronous, deterministic, and read-only. A successful build creates a new immutable snapshot ID/time and replaces the latest process-local snapshot for that workspace. Entries are sorted case-insensitively by relative POSIX path with an exact-path tie-breaker.
+Vault inventory is manual, synchronous, deterministic, and read-only. A successful build creates a new immutable snapshot ID/time and replaces the latest stored snapshot for that workspace. Entries are sorted case-insensitively by relative POSIX path with an exact-path tie-breaker.
 
 Traversal never follows symlinks. It prunes these directory names case-insensitively: `.git`, `node_modules`, `.pnpm-store`, `.venv`, `venv`, `.cache`, `dist`, `build`, `coverage`, `.next`, `target`, `out`, `output`, `__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, and `.turbo`. It also prunes the specific generated path suffix `src-tauri/gen` without excluding every directory named `gen`. Sensitive environment/credential/key names, common OS metadata, compiled/archive artifacts, files over 5 MiB, symlinks, non-regular nodes, and unreadable entries are excluded. Each pruned directory or excluded filesystem entry increments `excludedEntryCount` once; descendants of a pruned directory are not enumerated.
 
@@ -166,7 +168,7 @@ Text entries capture at most 16 KiB of strict UTF-8 and report preview/total byt
 
 The manifest pins schema version, workspace and inventory ids, explicit limits, aggregate summary, ordered file metadata, per-file content digests, capture modes, and bounded preview text. Compact canonical UTF-8 JSON with sorted object keys is SHA-256 hashed; `sha256:<hex>` becomes both the pack id and digest. Creation time is intentionally absent. Repeating the same unchanged selection against the same inventory returns the exact stored manifest with `created: false`. There is no update or delete endpoint.
 
-Context packs can be selected as the required immutable evidence binding for a queued run. Runs reference the pack by digest and expose only a compact summary; they do not copy mutable path selections or turn the manifest into a prompt/provider payload. Packs and runs remain process-local until durable execution history is introduced.
+Context packs can be selected as the required immutable evidence binding for a queued run. Runs reference the pack by digest and expose only a compact summary; they do not copy mutable path selections or turn the manifest into a prompt/provider payload. Packs and runs are persisted durably in SQLite.
 
 ## Guard v1 configuration and execution
 

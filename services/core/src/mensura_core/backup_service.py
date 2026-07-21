@@ -71,12 +71,16 @@ class BackupService:
         backup_path = backup_dir / filename
 
         try:
-            src = self._engine.raw_connection().driver_connection
-            dst = sqlite3.connect(str(backup_path))
+            raw_connection = self._engine.raw_connection()
             try:
-                src.backup(dst)
+                src = raw_connection.driver_connection
+                dst = sqlite3.connect(str(backup_path))
+                try:
+                    src.backup(dst)
+                finally:
+                    dst.close()
             finally:
-                dst.close()
+                raw_connection.close()
 
             sha256_hex = _compute_sha256(backup_path)
             file_size = backup_path.stat().st_size

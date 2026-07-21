@@ -22,8 +22,10 @@ Start Core in one terminal:
 
 ```sh
 cd services/core
-.venv/bin/python -m uvicorn mensura_core.main:app --reload
+.venv/bin/python -m uvicorn mensura_core.main:create_sql_app --factory --reload
 ```
+
+`create_sql_app` is the durable entry point (SQLite persistence, migrations, and the background job worker); the bare `mensura_core.main:app` target is an ephemeral in-memory variant only.
 
 Start the native Studio window from the repository root in another terminal:
 

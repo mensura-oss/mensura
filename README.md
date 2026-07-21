@@ -35,8 +35,10 @@ To run the current local slice, start Core and Studio in separate terminals:
 
 ```sh
 cd services/core
-.venv/bin/python -m uvicorn mensura_core.main:app --reload
+.venv/bin/python -m uvicorn mensura_core.main:create_sql_app --factory --reload
 ```
+
+`create_sql_app` is the durable entry point: it runs Alembic migrations, uses the SQLite-backed repositories, and starts the in-process background job worker. (The bare `mensura_core.main:app` target is an ephemeral in-memory variant used only for quick checks and does not persist across restarts.)
 
 ```sh
 pnpm studio:dev
@@ -54,4 +56,4 @@ See `apps/studio/README.md` for desktop configuration and native builds.
 
 ## Core API
 
-See `services/core/README.md` for Python 3.12 setup, tests, run commands, implemented endpoints, and the current in-memory limitation.
+See `services/core/README.md` for Python 3.12 setup, tests, run commands, and implemented endpoints. Core persists all domain artifacts and background jobs in SQLite (`~/.mensura/core.db`).

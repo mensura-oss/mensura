@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import threading
 from collections import deque
 from datetime import UTC, datetime
 from typing import Protocol
@@ -54,25 +55,51 @@ class EventPublisher(Protocol):
 
 
 class InMemoryEventPublisher:
+    """Fire-and-forget in-memory pub/sub with a bounded replay buffer.
+
+    ``publish`` is safe to call from any thread. The job worker runs inside
+    ``asyncio.to_thread`` and synchronous HTTP endpoints run in the FastAPI threadpool, so
+    events are handed to each subscriber's own event loop via ``call_soon_threadsafe``
+    rather than mutating a (non-thread-safe) ``asyncio.Queue`` across threads.
+    """
+
     def __init__(self) -> None:
-        self._queues: list[asyncio.Queue[MensuraEvent | None]] = []
+        self._subscribers: list[
+            tuple[asyncio.AbstractEventLoop, asyncio.Queue[MensuraEvent | None]]
+        ] = []
         self._buffer: deque[MensuraEvent] = deque(maxlen=_MAX_BUFFER_SIZE)
+        self._lock = threading.Lock()
 
     def publish(self, event: MensuraEvent) -> None:
-        self._buffer.append(event)
-        for queue in self._queues:
+        self._buffer.append(event)  # deque.append is atomic under the GIL
+        with self._lock:
+            subscribers = list(self._subscribers)
+        for loop, queue in subscribers:
             try:
-                queue.put_nowait(event)
-            except asyncio.QueueFull:
-                logger.warning("Event queue full, dropping event %s", event.event_id)
+                loop.call_soon_threadsafe(self._offer, queue, event)
+            except RuntimeError:
+                # The subscriber's loop is closed; drop this delivery best-effort.
+                continue
+
+    @staticmethod
+    def _offer(queue: asyncio.Queue[MensuraEvent | None], event: MensuraEvent) -> None:
+        try:
+            queue.put_nowait(event)
+        except asyncio.QueueFull:
+            logger.warning("Event queue full, dropping event %s", event.event_id)
 
     def subscribe(self) -> asyncio.Queue[MensuraEvent | None]:
+        loop = asyncio.get_running_loop()
         queue: asyncio.Queue[MensuraEvent | None] = asyncio.Queue(maxsize=256)
-        self._queues.append(queue)
+        with self._lock:
+            self._subscribers.append((loop, queue))
         return queue
 
     def unsubscribe(self, queue: asyncio.Queue[MensuraEvent | None]) -> None:
-        self._queues.remove(queue)
+        with self._lock:
+            self._subscribers = [
+                (loop, existing) for loop, existing in self._subscribers if existing is not queue
+            ]
 
     def replay_from(self, last_event_id: str | None) -> list[MensuraEvent]:
         if last_event_id is None:
