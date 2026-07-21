@@ -138,3 +138,28 @@ class SqlJobRepository:
             session.commit()
             rows = [session.get(JobRow, job_id) for job_id in ids]
             return tuple(row.to_domain() for row in rows if row is not None)
+
+    def retry_job(self, *, original_job_id: UUID, retry_job: Job, now: datetime) -> Job | None:
+        with self._sf() as session:
+            original = session.get(JobRow, original_job_id)
+            if original is None:
+                return None
+            if original.status != JobStatus.FAILED.value:
+                return None
+            if not original.retry_eligible:
+                return None
+
+            retry_row = JobRow.from_domain(retry_job)
+            session.add(retry_row)
+
+            session.execute(
+                update(JobRow)
+                .where(JobRow.id == original_job_id)
+                .values(
+                    retry_eligible=False,
+                    retry_count=JobRow.retry_count + 1,
+                )
+                .execution_options(synchronize_session=False)
+            )
+            session.commit()
+            return retry_job

@@ -42,6 +42,7 @@ from mensura_core.exceptions import (
     GuardRunInProgressError,
     GuardRunNotFoundError,
     JobNotFoundError,
+    JobRetryNotEligibleError,
     NotGitRepositoryError,
     ProposalVerificationContentIncompleteError,
     ProposalVerificationInProgressError,
@@ -144,6 +145,7 @@ UNDO_LIVE_DRIFT_TYPE = "urn:mensura:problem:undo-live-drift"
 UNDO_UNSAFE_PATH_TYPE = "urn:mensura:problem:undo-unsafe-path"
 UNDO_WRITE_FAILED_TYPE = "urn:mensura:problem:undo-write-failed"
 JOB_NOT_FOUND_TYPE = "urn:mensura:problem:job-not-found"
+JOB_RETRY_NOT_ELIGIBLE_TYPE = "urn:mensura:problem:job-retry-not-eligible"
 BACKUP_NOT_FOUND_TYPE = "urn:mensura:problem:backup-not-found"
 BACKUP_NOT_COMPLETED_TYPE = "urn:mensura:problem:backup-not-completed"
 BACKUP_INTEGRITY_ERROR_TYPE = "urn:mensura:problem:backup-integrity-error"
@@ -948,6 +950,18 @@ def install_problem_handlers(app: FastAPI) -> None:
             detail=error.detail,
         )
 
+    @app.exception_handler(JobRetryNotEligibleError)
+    async def job_retry_not_eligible_handler(
+        request: Request, error: JobRetryNotEligibleError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=409,
+            problem_type=JOB_RETRY_NOT_ELIGIBLE_TYPE,
+            title="Job not eligible for retry",
+            detail=error.detail,
+        )
+
     @app.exception_handler(BackupNotFoundError)
     async def backup_not_found_handler(
         request: Request, error: BackupNotFoundError
@@ -1117,6 +1131,9 @@ PROVIDER_CONFIGURATION_RESPONSE = problem_response(
 )
 BACKUP_CONFLICT_RESPONSE = problem_response(
     409, "The backup cannot be restored from its current status."
+)
+JOB_RETRY_CONFLICT_RESPONSE = problem_response(
+    409, "The job is not eligible for explicit retry."
 )
 BACKUP_INTEGRITY_RESPONSE = problem_response(
     422, "The backup file failed integrity verification."

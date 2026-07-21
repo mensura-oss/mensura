@@ -4,7 +4,11 @@ from uuid import UUID
 from fastapi import APIRouter, Query, Response, status
 
 from mensura_core.api.dependencies import JobServiceDependency
-from mensura_core.api.problems import NOT_FOUND_RESPONSE, VALIDATION_RESPONSE
+from mensura_core.api.problems import (
+    JOB_RETRY_CONFLICT_RESPONSE,
+    NOT_FOUND_RESPONSE,
+    VALIDATION_RESPONSE,
+)
 from mensura_core.job_models import EnqueueJobRequest, Job, JobCollection, JobStatus, JobType
 
 router = APIRouter(tags=["jobs"])
@@ -53,3 +57,20 @@ async def get_job(
     service: JobServiceDependency,
 ) -> Job:
     return service.get(job_id)
+
+
+@router.post(
+    "/jobs/{job_id}/retry",
+    response_model=Job,
+    status_code=status.HTTP_200_OK,
+    responses={**NOT_FOUND_RESPONSE, **JOB_RETRY_CONFLICT_RESPONSE},
+    summary="Explicitly retry a failed background job",
+)
+def retry_job(
+    job_id: UUID,
+    response: Response,
+    service: JobServiceDependency,
+) -> Job:
+    retry = service.retry(job_id)
+    response.headers["Location"] = f"/api/v1/jobs/{retry.id}"
+    return retry

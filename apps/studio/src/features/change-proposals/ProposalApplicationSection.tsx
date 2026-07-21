@@ -5,12 +5,14 @@ import type {
   ApplicationStatus,
   AppliedFileReason,
   ChangeProposal,
+  Job,
   ProposalVerification,
   UndoArtifact,
   UndoCollection,
   UndoFileAction,
 } from "@mensura/shared-types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { useCoreClient } from "../../api/CoreClientProvider";
 import { queryKeys } from "../../app/queryClient";
@@ -54,6 +56,8 @@ export function ProposalApplicationSection({
   const client = useCoreClient();
   const queryClient = useQueryClient();
   const workspaceId = proposal.workspaceId;
+  const [applyJobId, setApplyJobId] = useState<string | null>(null);
+  const [undoJobId, setUndoJobId] = useState<string | null>(null);
 
   const verifications = useQuery({
     queryKey: queryKeys.changeProposalVerifications(proposal.id),
@@ -95,6 +99,19 @@ export function ProposalApplicationSection({
     },
   });
 
+  const applyJob = useMutation({
+    mutationFn: (verificationId: string) =>
+      client.enqueueJob({
+        jobType: "application_apply",
+        proposalId: proposal.id,
+        verificationId,
+      }),
+    onSuccess: (job) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.jobs });
+      setApplyJobId(job.id);
+    },
+  });
+
   const undo = useMutation({
     mutationFn: (applicationId: string) =>
       client.undoApplication(applicationId),
@@ -116,6 +133,40 @@ export function ProposalApplicationSection({
         },
       );
     },
+  });
+
+  const undoJob = useMutation({
+    mutationFn: (applicationId: string) =>
+      client.enqueueJob({
+        jobType: "application_undo",
+        applicationId,
+      }),
+    onSuccess: (job) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.jobs });
+      setUndoJobId(job.id);
+    },
+  });
+
+  const applyJobStatus = useQuery<Job | null>({
+    queryKey: applyJobId ? queryKeys.job(applyJobId) : ["core", "jobs", "apply-noop"],
+    queryFn: () => (applyJobId ? client.getJob(applyJobId) : Promise.resolve(null)),
+    enabled: Boolean(applyJobId),
+    refetchInterval: (query) =>
+      query.state.data?.status === "queued" || query.state.data?.status === "running"
+        ? 1_000
+        : false,
+    retry: false,
+  });
+
+  const undoJobStatus = useQuery<Job | null>({
+    queryKey: undoJobId ? queryKeys.job(undoJobId) : ["core", "jobs", "undo-noop"],
+    queryFn: () => (undoJobId ? client.getJob(undoJobId) : Promise.resolve(null)),
+    enabled: Boolean(undoJobId),
+    refetchInterval: (query) =>
+      query.state.data?.status === "queued" || query.state.data?.status === "running"
+        ? 1_000
+        : false,
+    retry: false,
   });
 
   if (proposal.status !== "approved") return null;
@@ -172,14 +223,23 @@ export function ProposalApplicationSection({
           undoArtifact={undoArtifact}
           isUndoing={undo.isPending}
           onUndo={() => undo.mutate(application.id)}
+          onUndoJob={() => undoJob.mutate(application.id)}
+          isUndoJobPending={undoJob.isPending}
           undoError={undo.error}
+          undoJobError={undoJob.error}
+          undoJobStatus={undoJobStatus.data ?? null}
         />
       ) : (
         <ApplyGate
           hasVerification={verificationItems.length > 0}
           passingVerification={passingVerification}
           pending={apply.isPending}
+          jobPending={applyJob.isPending}
           onApply={(verificationId) => apply.mutate(verificationId)}
+          onApplyJob={(verificationId) => applyJob.mutate(verificationId)}
+          applyError={apply.error}
+          applyJobError={applyJob.error}
+          applyJobStatus={applyJobStatus.data ?? null}
         />
       )}
       {apply.isError ? <ProblemDetailsView error={apply.error} /> : null}
@@ -191,12 +251,22 @@ function ApplyGate({
   hasVerification,
   passingVerification,
   pending,
+  jobPending,
   onApply,
+  onApplyJob,
+  applyError,
+  applyJobError,
+  applyJobStatus,
 }: {
   hasVerification: boolean;
   passingVerification: ProposalVerification | undefined;
   pending: boolean;
+  jobPending: boolean;
   onApply: (verificationId: string) => void;
+  onApplyJob: (verificationId: string) => void;
+  applyError: unknown;
+  applyJobError: unknown;
+  applyJobStatus: Job | null;
 }) {
   const gates: { label: string; met: boolean }[] = [
     { label: "Proposal approved", met: true },
@@ -226,15 +296,44 @@ function ApplyGate({
           <button
             className="button button--primary"
             type="button"
-            onClick={() => onApply(passingVerification.id)}
-            disabled={pending}
+            onClick={() => onApplyJob(passingVerification.id)}
+            disabled={jobPending || pending}
           >
-            {pending ? "Applying to live working tree…" : "Apply to live working tree"}
+            {jobPending ? "Enqueuing apply job…" : "Apply as background job"}
+          </button>
+          <button
+            className="button button--secondary"
+            type="button"
+            onClick={() => onApply(passingVerification.id)}
+            disabled={pending || jobPending}
+          >
+            {pending ? "Applying…" : "Apply (direct)"}
           </button>
           <span className="proposal-application__uses">
             Uses passing verification{" "}
             <code>{passingVerification.id.slice(0, 8)}</code>
           </span>
+          {applyJobError ? <ProblemDetailsView error={applyJobError} /> : null}
+          {applyError ? <ProblemDetailsView error={applyError} /> : null}
+          {applyJobStatus ? (
+            <div className="proposal-application__job-status" role="status">
+              <span className={`badge badge--${applyJobStatus.status}`}>
+                Job: {applyJobStatus.status}
+              </span>
+              {applyJobStatus.status === "succeeded" ? (
+                <span>
+                  Applied —{" "}
+                  {applyJobStatus.resultEntityId ? (
+                    <code>{applyJobStatus.resultEntityId.slice(0, 8)}</code>
+                  ) : null}
+                </span>
+              ) : applyJobStatus.status === "failed" ? (
+                <span className="job-item__error">
+                  Failed: {applyJobStatus.lastError ?? "Unknown error"}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : (
         <p className="proposal-application__blocked" role="status">
@@ -283,13 +382,21 @@ function UndoSection({
   undoArtifact,
   isUndoing,
   onUndo,
+  onUndoJob,
+  isUndoJobPending,
   undoError,
+  undoJobError,
+  undoJobStatus,
 }: {
   application: ApplicationArtifact;
   undoArtifact: UndoArtifact | undefined;
   isUndoing: boolean;
   onUndo: () => void;
+  onUndoJob: () => void;
+  isUndoJobPending: boolean;
   undoError: unknown;
+  undoJobError: unknown;
+  undoJobStatus: Job | null;
 }) {
   const isEligible =
     APPLIED_OUTCOMES.includes(application.status) && !undoArtifact;
@@ -320,16 +427,41 @@ function UndoSection({
           and require external recovery.
         </p>
       ) : (
-        <button
-          className="button button--primary"
-          type="button"
-          onClick={onUndo}
-          disabled={isUndoing}
-        >
-          {isUndoing ? "Undoing…" : "Undo application"}
-        </button>
+        <div className="proposal-application__actions">
+          <button
+            className="button button--primary"
+            type="button"
+            onClick={onUndoJob}
+            disabled={isUndoJobPending || isUndoing}
+          >
+            {isUndoJobPending ? "Enqueuing undo job…" : "Undo as background job"}
+          </button>
+          <button
+            className="button button--secondary"
+            type="button"
+            onClick={onUndo}
+            disabled={isUndoing || isUndoJobPending}
+          >
+            {isUndoing ? "Undoing…" : "Undo (direct)"}
+          </button>
+          {undoJobError ? <ProblemDetailsView error={undoJobError} /> : null}
+          {undoError ? <ProblemDetailsView error={undoError} /> : null}
+          {undoJobStatus ? (
+            <div className="proposal-application__job-status" role="status">
+              <span className={`badge badge--${undoJobStatus.status}`}>
+                Job: {undoJobStatus.status}
+              </span>
+              {undoJobStatus.status === "succeeded" ? (
+                <span>Undo completed</span>
+              ) : undoJobStatus.status === "failed" ? (
+                <span className="job-item__error">
+                  Failed: {undoJobStatus.lastError ?? "Unknown error"}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
       )}
-      {undoError ? <ProblemDetailsView error={undoError} /> : null}
     </div>
   );
 }
@@ -452,13 +584,21 @@ function ApplicationResult({
   undoArtifact,
   isUndoing,
   onUndo,
+  onUndoJob,
+  isUndoJobPending,
   undoError,
+  undoJobError,
+  undoJobStatus,
 }: {
   application: ApplicationArtifact;
   undoArtifact: UndoArtifact | undefined;
   isUndoing: boolean;
   onUndo: () => void;
+  onUndoJob: () => void;
+  isUndoJobPending: boolean;
   undoError: unknown;
+  undoJobError: unknown;
+  undoJobStatus: Job | null;
 }) {
   const restorable = application.undo.files.filter(
     (file) => !file.priorTruncated,
@@ -590,7 +730,11 @@ function ApplicationResult({
         undoArtifact={undoArtifact}
         isUndoing={isUndoing}
         onUndo={onUndo}
+        onUndoJob={onUndoJob}
+        isUndoJobPending={isUndoJobPending}
         undoError={undoError}
+        undoJobError={undoJobError}
+        undoJobStatus={undoJobStatus}
       />
 
       <p className="proposal-review__decision" role="status">

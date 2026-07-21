@@ -19,6 +19,7 @@ from mensura_core.exceptions import (
     ApplicationLiveDriftError,
     ChangeProposalNotFoundError,
     JobNotFoundError,
+    JobRetryNotEligibleError,
 )
 from mensura_core.job_models import (
     EnqueueBackupJob,
@@ -433,3 +434,160 @@ def test_sql_jobs_persist_across_restart() -> None:
         engine2.dispose()
     finally:
         Path(db_path).unlink(missing_ok=True)
+
+
+# -------------------------------------------------------------------- retry
+
+
+def test_retry_creates_new_linked_job_and_exhausts_original() -> None:
+    repo = InMemoryJobRepository()
+    publisher = RecordingPublisher()
+    workspace_id = uuid4()
+    proposal_id = uuid4()
+    service = _make_service(repo, workspace_id=workspace_id, publisher=publisher)
+
+    original = service.enqueue(
+        EnqueueVerificationJob(job_type="proposal_verification", proposal_id=proposal_id)
+    )
+    # Simulate the worker: claim → fail
+    claimed = repo.claim_next(worker_id="w1", now=_now())
+    assert claimed is not None
+    failed = repo.mark_failed(claimed.id, last_error="Something broke", finished_at=_now())
+    assert failed is not None and failed.status is JobStatus.FAILED
+
+    # Retry it
+    retry = service.retry(original.id)
+    assert retry.id != original.id
+    assert retry.status is JobStatus.QUEUED
+    assert retry.job_type is JobType.PROPOSAL_VERIFICATION
+    assert retry.retry_of_job_id == original.id
+    assert retry.root_job_id == original.id
+    assert retry.retry_eligible is True
+    assert retry.retry_count == 0
+    assert retry.attempt_count == 0
+    assert retry.payload.proposal_id == proposal_id
+
+    # Original is exhausted
+    orig_after = repo.get(original.id)
+    assert orig_after is not None
+    assert orig_after.retry_eligible is False
+    assert orig_after.retry_count == 1
+
+    # Events published for both
+    statuses = [(e.entity_id, e.status) for e in publisher.events]
+    assert (str(original.id), "queued") in statuses
+    assert (str(retry.id), "queued") in statuses
+
+
+def test_retry_refuses_non_failed_job() -> None:
+    repo = InMemoryJobRepository()
+    service = _make_service(repo, workspace_id=uuid4())
+    job = service.enqueue(
+        EnqueueVerificationJob(job_type="proposal_verification", proposal_id=uuid4())
+    )
+    with pytest.raises(JobRetryNotEligibleError, match="Only failed jobs"):
+        service.retry(job.id)
+
+
+def test_retry_refuses_already_exhausted_job() -> None:
+    repo = InMemoryJobRepository()
+    publisher = RecordingPublisher()
+    service = _make_service(repo, workspace_id=uuid4(), publisher=publisher)
+
+    original = service.enqueue(
+        EnqueueVerificationJob(job_type="proposal_verification", proposal_id=uuid4())
+    )
+    repo.claim_next(worker_id="w1", now=_now())
+    repo.mark_failed(original.id, last_error="x", finished_at=_now())
+    service.retry(original.id)
+
+    with pytest.raises(JobRetryNotEligibleError, match="already been retried"):
+        service.retry(original.id)
+
+
+def test_retry_refuses_unsupported_job_type() -> None:
+    repo = InMemoryJobRepository()
+    publisher = RecordingPublisher()
+    service = _make_service(repo, workspace_id=uuid4(), publisher=publisher)
+
+    backup = service.enqueue(EnqueueBackupJob(job_type="backup_create", label="nightly"))
+    repo.claim_next(worker_id="w1", now=_now())
+    repo.mark_failed(backup.id, last_error="boom", finished_at=_now())
+
+    with pytest.raises(JobRetryNotEligibleError, match="does not support retry"):
+        service.retry(backup.id)
+
+
+def test_retry_child_can_be_retried_itself() -> None:
+    repo = InMemoryJobRepository()
+    publisher = RecordingPublisher()
+    service = _make_service(repo, workspace_id=uuid4(), publisher=publisher)
+
+    original = service.enqueue(
+        EnqueueVerificationJob(job_type="proposal_verification", proposal_id=uuid4())
+    )
+    repo.claim_next(worker_id="w1", now=_now())
+    repo.mark_failed(original.id, last_error="first", finished_at=_now())
+
+    retry1 = service.retry(original.id)
+    repo.claim_next(worker_id="w1", now=_now())
+    repo.mark_failed(retry1.id, last_error="second", finished_at=_now())
+
+    # The retry child itself is retry-eligible
+    assert repo.get(retry1.id).retry_eligible is True
+
+    retry2 = service.retry(retry1.id)
+    assert retry2.retry_of_job_id == retry1.id
+    assert retry2.root_job_id == original.id
+    assert retry2.status is JobStatus.QUEUED
+
+
+def test_retry_preserves_workspace_and_target_from_original() -> None:
+    repo = InMemoryJobRepository()
+    workspace_id = uuid4()
+    proposal_id = uuid4()
+    service = _make_service(repo, workspace_id=workspace_id)
+
+    original = service.enqueue(
+        EnqueueVerificationJob(job_type="proposal_verification", proposal_id=proposal_id)
+    )
+    repo.claim_next(worker_id="w1", now=_now())
+    repo.mark_failed(original.id, last_error="x", finished_at=_now())
+
+    retry = service.retry(original.id)
+
+    assert retry.workspace_id == workspace_id
+    assert retry.target_entity_id == proposal_id
+    assert retry.target_entity_type is JobTargetType.CHANGE_PROPOSAL
+
+
+def test_retry_via_sql_repository(repo) -> None:  # type: ignore[no-untyped-def]
+    publisher = RecordingPublisher()
+    workspace_id = uuid4()
+    proposal_id = uuid4()
+    service = _make_service(repo, workspace_id=workspace_id, publisher=publisher)
+
+    original = service.enqueue(
+        EnqueueVerificationJob(job_type="proposal_verification", proposal_id=proposal_id)
+    )
+    repo.claim_next(worker_id="w1", now=_now())
+    repo.mark_failed(original.id, last_error="drifted", finished_at=_now())
+
+    retry = service.retry(original.id)
+    assert retry.status is JobStatus.QUEUED
+    assert retry.retry_of_job_id == original.id
+
+    orig_reloaded = repo.get(original.id)
+    assert orig_reloaded is not None
+    assert orig_reloaded.retry_eligible is False
+    assert orig_reloaded.retry_count == 1
+
+    # The retry can be claimed and executed
+    claimed = repo.claim_next(worker_id="w1", now=_now())
+    assert claimed is not None and claimed.id == retry.id
+    result_id = uuid4()
+    done = repo.mark_succeeded(
+        retry.id, result_entity_type="verification", result_entity_id=result_id, finished_at=_now()
+    )
+    assert done is not None and done.status is JobStatus.SUCCEEDED
+    assert done.retry_of_job_id == original.id

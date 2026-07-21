@@ -28,6 +28,10 @@ const baseJob: Job = {
   createdAt: "2026-07-21T12:00:00Z",
   startedAt: "2026-07-21T12:00:01Z",
   finishedAt: "2026-07-21T12:00:05Z",
+  retryOfJobId: null,
+  rootJobId: null,
+  retryEligible: true,
+  retryCount: 0,
 };
 
 const failedJob: Job = {

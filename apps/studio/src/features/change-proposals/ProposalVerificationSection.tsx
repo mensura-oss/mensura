@@ -6,7 +6,9 @@ import type {
   ProposalVerificationOutcome,
   VerificationGuardResult,
 } from "@mensura/shared-types";
+import type { Job } from "@mensura/shared-types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { useCoreClient } from "../../api/CoreClientProvider";
 import { queryKeys } from "../../app/queryClient";
@@ -39,6 +41,7 @@ export function ProposalVerificationSection({
 }) {
   const client = useCoreClient();
   const queryClient = useQueryClient();
+  const [verifyJobId, setVerifyJobId] = useState<string | null>(null);
   const verifications = useQuery({
     queryKey: queryKeys.changeProposalVerifications(proposal.id),
     queryFn: () => client.listChangeProposalVerifications(proposal.id),
@@ -66,11 +69,36 @@ export function ProposalVerificationSection({
     },
   });
 
+  const verifyJob = useMutation({
+    mutationFn: () =>
+      client.enqueueJob({
+        jobType: "proposal_verification",
+        proposalId: proposal.id,
+      }),
+    onSuccess: (job) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.jobs });
+      setVerifyJobId(job.id);
+    },
+  });
+
+  const jobStatus = useQuery<Job | null>({
+    queryKey: verifyJobId ? queryKeys.job(verifyJobId) : ["core", "jobs", "noop"],
+    queryFn: () => (verifyJobId ? client.getJob(verifyJobId) : Promise.resolve(null)),
+    enabled: Boolean(verifyJobId),
+    refetchInterval: (query) =>
+      query.state.data?.status === "queued" || query.state.data?.status === "running"
+        ? 1_000
+        : false,
+    retry: false,
+  });
+
   if (proposal.status !== "approved") return null;
 
   const items = verifications.data?.items ?? [];
-  const latest = verify.data ?? items[items.length - 1];
-  const previousCount = Math.max(0, items.length - (latest ? 1 : 0));
+  const verifyLatest = verify.data ?? items[items.length - 1];
+
+  const jobSucceeded = jobStatus.data?.status === "succeeded" && jobStatus.data?.resultEntityId;
+  const previousCount = Math.max(0, items.length - (verifyLatest ? 1 : 0));
 
   return (
     <section
@@ -82,8 +110,8 @@ export function ProposalVerificationSection({
           <span className="section-label">Temporary isolated sandbox</span>
           <h4 id={`verification-${proposal.id}`}>Proposal verification</h4>
         </div>
-        {latest ? (
-          <span className={`badge badge--${latest.status}`}>{latest.status}</span>
+        {verifyLatest ? (
+          <span className={`badge badge--${verifyLatest.status}`}>{verifyLatest.status}</span>
         ) : null}
       </div>
 
@@ -109,20 +137,53 @@ export function ProposalVerificationSection({
         >
           {verify.isPending
             ? "Verifying in isolated sandbox…"
-            : latest
-              ? "Verify again in isolated sandbox"
-              : "Verify in isolated sandbox"}
+            : verifyLatest
+              ? "Verify again (direct)"
+              : "Verify (direct)"}
+        </button>
+        <button
+          className="button button--primary"
+          type="button"
+          onClick={() => verifyJob.mutate()}
+          disabled={verifyJob.isPending || verify.isPending}
+        >
+          {verifyJob.isPending
+            ? "Enqueuing verification job…"
+            : "Verify as background job"}
         </button>
         {verify.isPending ? (
           <span role="status" className="proposal-verification__pending">
             Running Guard inside a temporary worktree…
           </span>
         ) : null}
+        {verifyJob.isError ? <ProblemDetailsView error={verifyJob.error} /> : null}
       </div>
+
+      {jobStatus.data ? (
+        <div className="proposal-verification__job-status" role="status">
+          <span className={`badge badge--${jobStatus.data.status}`}>
+            Job: {jobStatus.data.status}
+          </span>
+          {jobStatus.data.status === "running" ? (
+            <span>Verification is running in a background worker…</span>
+          ) : null}
+          {jobStatus.data.status === "succeeded" && jobStatus.data.resultEntityId ? (
+            <span>
+              Completed —{" "}
+              <code>{jobStatus.data.resultEntityId.slice(0, 8)}</code>
+            </span>
+          ) : null}
+          {jobStatus.data.status === "failed" ? (
+            <span className="job-item__error">
+              Failed: {jobStatus.data.lastError ?? "Unknown error"}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       {verify.isError ? <ProblemDetailsView error={verify.error} /> : null}
 
-      {latest ? (
-        <VerificationResult verification={latest} previousCount={previousCount} />
+      {verifyLatest ? (
+        <VerificationResult verification={verifyLatest} previousCount={previousCount} />
       ) : null}
     </section>
   );

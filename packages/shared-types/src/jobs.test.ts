@@ -33,6 +33,10 @@ describe("Job contracts", () => {
     createdAt: "2026-07-21T12:00:00Z",
     startedAt: null,
     finishedAt: null,
+    retryOfJobId: null,
+    rootJobId: null,
+    retryEligible: true,
+    retryCount: 0,
   };
 
   it("pins JOB_SCHEMA_VERSION to 1", () => {
@@ -142,5 +146,47 @@ describe("Job contracts", () => {
     expect(empty.items).toHaveLength(0);
     expect(populated.items[0]?.id).toBe(baseJob.id);
     expect(populated.total).toBe(1);
+  });
+
+  it("validates a retry child job with parent and root linkage", () => {
+    const retryJob: Job = {
+      ...baseJob,
+      retryOfJobId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      rootJobId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      retryEligible: true,
+      retryCount: 0,
+    };
+
+    expect(retryJob.retryOfJobId).toBe("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    expect(retryJob.rootJobId).toBe("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    expect(retryJob.retryEligible).toBe(true);
+    expect(retryJob.retryCount).toBe(0);
+  });
+
+  it("validates a root job that is no longer retry-eligible after spawning a child", () => {
+    const exhausted: Job = {
+      ...baseJob,
+      retryEligible: false,
+      retryCount: 1,
+    };
+
+    expect(exhausted.retryEligible).toBe(false);
+    expect(exhausted.retryCount).toBe(1);
+    expect(exhausted.retryOfJobId).toBeNull();
+  });
+
+  it("validates retry linkage preserves without leaking into unrelated jobs", () => {
+    const unrelated: Job = {
+      ...baseJob,
+      retryOfJobId: null,
+      rootJobId: null,
+      retryEligible: true,
+      retryCount: 0,
+    };
+
+    expect(unrelated.retryOfJobId).toBeNull();
+    expect(unrelated.rootJobId).toBeNull();
+    expect(unrelated.retryEligible).toBe(true);
+    expect(unrelated.retryCount).toBe(0);
   });
 });

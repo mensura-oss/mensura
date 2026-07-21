@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { JobStatus } from "@mensura/shared-types";
+import type { Job, JobStatus } from "@mensura/shared-types";
 
 import { useCoreClient } from "../../api/CoreClientProvider";
 import { queryKeys } from "../../app/queryClient";
@@ -39,6 +39,13 @@ export function JobsPanel() {
 
   const queueBackup = useMutation({
     mutationFn: () => client.enqueueJob({ jobType: "backup_create" }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.jobs });
+    },
+  });
+
+  const retryJob = useMutation({
+    mutationFn: (jobId: string) => client.retryJob(jobId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.jobs });
     },
@@ -95,6 +102,12 @@ export function JobsPanel() {
                   <span>Finished {formatTimestamp(job.finishedAt)}</span>
                 ) : null}
               </div>
+              {job.retryOfJobId ? (
+                <div className="job-item__retry-lineage">
+                  Retry of <code>{shortId(job.retryOfJobId)}</code>
+                  {job.rootJobId ? <> — root: <code>{shortId(job.rootJobId)}</code></> : null}
+                </div>
+              ) : null}
               {job.resultEntityId ? (
                 <div className="job-item__result">
                   Produced {job.resultEntityType} {shortId(job.resultEntityId)}
@@ -102,6 +115,23 @@ export function JobsPanel() {
               ) : null}
               {job.lastError ? (
                 <div className="job-item__error">{job.lastError}</div>
+              ) : null}
+              {job.status === "failed" && job.retryEligible ? (
+                <div className="job-item__actions">
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    onClick={() => retryJob.mutate(job.id)}
+                    disabled={retryJob.isPending}
+                  >
+                    {retryJob.isPending ? "Retrying…" : "Retry (single attempt remaining)"}
+                  </button>
+                </div>
+              ) : null}
+              {job.status === "failed" && !job.retryEligible && job.retryCount > 0 ? (
+                <div className="job-item__retry-exhausted">
+                  ℹ No retries remaining
+                </div>
               ) : null}
             </div>
           ))}

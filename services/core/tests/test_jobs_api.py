@@ -8,6 +8,7 @@ produces its normal artifact while the job records the lifecycle."""
 import os
 import tempfile
 from pathlib import Path
+from uuid import UUID
 
 from fastapi.testclient import TestClient
 from test_undo_api import (
@@ -270,3 +271,95 @@ def test_backup_job_runs_end_to_end_with_sql(tmp_path: Path) -> None:
         else:
             os.environ.pop("MENSURA_BACKUP_DIR", None)
         Path(db_path).unlink(missing_ok=True)
+
+
+# -------------------------------------------------------------------- retry API
+
+
+def _fail_a_job(client: TestClient, job_id: str) -> None:
+    """Simulate the worker picking up a job and failing it."""
+    repo = client.app.state.job_service._repo
+    repo.claim_next(worker_id="w1", now=_now())
+    repo.mark_failed(UUID(job_id), last_error="Simulated failure", finished_at=_now())
+
+
+def test_retry_returns_new_linked_job(tmp_path: Path) -> None:
+    with _git_client(tmp_path) as client:
+        _workspace, proposal = _approve_unverified_proposal(client, tmp_path)
+        job = client.post(
+            "/api/v1/jobs",
+            json={"jobType": "proposal_verification", "proposalId": proposal["id"]},
+        ).json()
+        _fail_a_job(client, job["id"])
+
+        resp = client.post(f"/api/v1/jobs/{job['id']}/retry")
+        assert resp.status_code == 200
+        retry = resp.json()
+        assert retry["status"] == "queued"
+        assert retry["retryOfJobId"] == job["id"]
+        assert retry["rootJobId"] == job["id"]
+        assert retry["retryEligible"] is True
+        assert retry["retryCount"] == 0
+        assert resp.headers["location"] == f"/api/v1/jobs/{retry['id']}"
+
+        # Original is exhausted
+        orig = client.get(f"/api/v1/jobs/{job['id']}").json()
+        assert orig["retryEligible"] is False
+        assert orig["retryCount"] == 1
+
+
+def test_retry_on_non_failed_returns_conflict(tmp_path: Path) -> None:
+    with _git_client(tmp_path) as client:
+        _workspace, proposal = _approve_unverified_proposal(client, tmp_path)
+        job = client.post(
+            "/api/v1/jobs",
+            json={"jobType": "proposal_verification", "proposalId": proposal["id"]},
+        ).json()
+
+        resp = client.post(f"/api/v1/jobs/{job['id']}/retry")
+        assert resp.status_code == 409
+        assert resp.json()["type"] == "urn:mensura:problem:job-retry-not-eligible"
+
+
+def test_retry_already_exhausted_returns_conflict(tmp_path: Path) -> None:
+    with _git_client(tmp_path) as client:
+        _workspace, proposal = _approve_unverified_proposal(client, tmp_path)
+        job = client.post(
+            "/api/v1/jobs",
+            json={"jobType": "proposal_verification", "proposalId": proposal["id"]},
+        ).json()
+        _fail_a_job(client, job["id"])
+        client.post(f"/api/v1/jobs/{job['id']}/retry")
+
+        resp = client.post(f"/api/v1/jobs/{job['id']}/retry")
+        assert resp.status_code == 409
+
+
+def test_retried_job_executes_and_produces_artifact(tmp_path: Path) -> None:
+    with _git_client(tmp_path) as client:
+        _workspace, proposal = _approve_unverified_proposal(client, tmp_path)
+        job = client.post(
+            "/api/v1/jobs",
+            json={"jobType": "proposal_verification", "proposalId": proposal["id"]},
+        ).json()
+        _fail_a_job(client, job["id"])
+
+        resp = client.post(f"/api/v1/jobs/{job['id']}/retry")
+        retry = resp.json()
+
+        finished = client.app.state.job_worker.process_next_job()
+        assert finished is not None
+        assert finished.status.value == "succeeded"
+        assert finished.result_entity_type == "verification"
+        assert str(finished.id) == retry["id"]
+
+        # The verification artifact exists
+        verifications = client.get(
+            f"/api/v1/change-proposals/{proposal['id']}/verifications"
+        ).json()
+        assert verifications["total"] == 1
+
+
+def _now():
+    from datetime import UTC, datetime
+    return datetime.now(UTC)

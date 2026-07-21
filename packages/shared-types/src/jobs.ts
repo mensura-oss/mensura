@@ -58,6 +58,15 @@ export interface Job {
   createdAt: IsoDateTime;
   startedAt: IsoDateTime | null;
   finishedAt: IsoDateTime | null;
+
+  /** If this job is a retry, the id of the job it was created from. */
+  retryOfJobId: EntityId | null;
+  /** The original (root) job in a retry chain, or this job itself if it's the root. */
+  rootJobId: EntityId | null;
+  /** Whether this failed job is eligible for explicit user-initiated retry. */
+  retryEligible: boolean;
+  /** How many explicit retry children have been spawned from this job. */
+  retryCount: number;
 }
 
 export interface JobCollection {

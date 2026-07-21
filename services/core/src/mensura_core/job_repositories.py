@@ -46,6 +46,12 @@ class JobRepository(Protocol):
         """Transition interrupted running jobs to failed on startup. Returns recovered jobs."""
         ...
 
+    def retry_job(self, *, original_job_id: UUID, retry_job: Job, now: datetime) -> Job | None:
+        """Atomically create a linked retry child and mark the original as no longer
+        retry-eligible. Returns the new queued retry job, or None if the original is
+        missing, not failed, or already exhausted."""
+        ...
+
 
 class InMemoryJobRepository:
     def __init__(self) -> None:
@@ -144,3 +150,19 @@ class InMemoryJobRepository:
                     self._jobs[updated.id] = updated
                     recovered.append(updated)
             return tuple(recovered)
+
+    def retry_job(self, *, original_job_id: UUID, retry_job: Job, now: datetime) -> Job | None:
+        with self._lock:
+            original = self._jobs.get(original_job_id)
+            if original is None or original.status is not JobStatus.FAILED:
+                return None
+            if not original.retry_eligible:
+                return None
+            self._jobs[retry_job.id] = retry_job
+            exhausted = _with(
+                original,
+                retry_eligible=False,
+                retry_count=original.retry_count + 1,
+            )
+            self._jobs[exhausted.id] = exhausted
+            return retry_job

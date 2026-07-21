@@ -42,6 +42,7 @@ def test_openapi_exposes_the_implemented_v1_contract(client: TestClient) -> None
         "/api/v1/backups/{backup_id}/restore",
         "/api/v1/jobs",
         "/api/v1/jobs/{job_id}",
+        "/api/v1/jobs/{job_id}/retry",
         "/api/v1/events/stream",
     }
 

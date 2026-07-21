@@ -63,6 +63,10 @@ class Job(ResourceModel):
     created_at: AwareDatetime
     started_at: AwareDatetime | None
     finished_at: AwareDatetime | None
+    retry_of_job_id: UUID | None = None
+    root_job_id: UUID | None = None
+    retry_eligible: bool = True
+    retry_count: Annotated[int, Field(ge=0)] = 0
 
     @model_validator(mode="after")
     def validate_lifecycle(self) -> "Job":

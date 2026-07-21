@@ -1399,6 +1399,91 @@
 
 ### 2026-07-21 — Complete work cycle 19: durable background job execution
 
+Cycle 19 added a SQLite-backed durable job queue so the four long-running operations (proposal verification, application apply, application undo, backup creation) can each run as persisted background jobs instead of only inline in the HTTP request. [Full cycle 19 details retained above.]
+
+### 2026-07-21 — Start work cycle 20: job-first Studio flows + explicit single-retry
+
+Goal: Make durable jobs the primary Studio path for proposal verification, application apply, and application undo, and add a bounded explicit single-retry path for failed jobs.
+
+Product scope:
+- Studio launches verify/apply/undo through the durable job path (with direct buttons kept as secondary)
+- job-aware UI on proposal/application panels (inline status, result linkage, error display)
+- explicit single-retry for eligible failed jobs via `POST /api/v1/jobs/{job_id}/retry`
+- clear linkage between jobs and resulting artifacts
+- minimal Core additions: retry eligibility, retry API, new retry tracking fields
+
+Retry strategy:
+- Only failed jobs are retry-eligible
+- Only one retry per original job (original marked `retryEligible=False` after spawn)
+- Retry creates a new linked child `Job`, never mutates history
+- Retry child is itself retry-eligible once (chain: original → retry1 → retry2 max)
+- No automatic retry scheduling — all retries are explicit user actions
+- Domain safety validations run identically during retried execution (Guard, digest checks, drift detection)
+- Unsupported job types (backup_create) are not retryable
+- Four new fields on Job: `retryOfJobId`, `rootJobId`, `retryEligible`, `retryCount`
+
+### 2026-07-21 — Complete work cycle 20: job-first Studio flows + explicit single-retry
+
+Implementation completed. Files changed:
+
+**Shared types:**
+- `packages/shared-types/src/jobs.ts` — added `retryOfJobId`, `rootJobId`, `retryEligible`, `retryCount` to `Job` interface
+- `packages/shared-types/src/jobs.test.ts` — added 3 retry contract tests (+ existing all pass)
+
+**Core data layer:**
+- `services/core/src/mensura_core/job_models.py` — added 4 retry fields to Pydantic `Job` model
+- `services/core/src/mensura_core/persistence/models.py` — added 4 columns to `JobRow` SQLAlchemy model, updated `to_domain()`/`from_domain()`
+- `services/core/src/mensura_core/migrations/versions/005_add_job_retry_fields.py` — new Alembic migration
+
+**Core repository:**
+- `services/core/src/mensura_core/job_repositories.py` — added `retry_job` to protocol + `InMemoryJobRepository` implementation
+- `services/core/src/mensura_core/persistence/repositories/job.py` — added `SqlJobRepository.retry_job` (transactional insert + update)
+
+**Core service:**
+- `services/core/src/mensura_core/job_service.py` — added `retry(job_id)` method with eligibility checks, linked child creation, SSE publish for both original and retry
+- `services/core/src/mensura_core/exceptions.py` — added `JobRetryNotEligibleError`
+- `services/core/src/mensura_core/api/problems.py` — added `JOB_RETRY_NOT_ELIGIBLE_TYPE` urn, 409 conflict response, and exception handler
+
+**Core API:**
+- `services/core/src/mensura_core/api/routers/jobs.py` — added `POST /api/v1/jobs/{job_id}/retry` endpoint with 200/404/409 responses
+
+**Studio API client:**
+- `apps/studio/src/api/coreClient.ts` — added `retryJob(jobId)` to interface and implementation
+- `apps/studio/src/test/render.tsx` — added `retryJob` to test client fixture
+
+**Studio UI — job-first flows:**
+- `apps/studio/src/features/change-proposals/ProposalVerificationSection.tsx` — added "Verify as background job" button, job status polling, inline job status display; kept "Verify (direct)" as secondary
+- `apps/studio/src/features/change-proposals/ProposalApplicationSection.tsx` — added job-based apply ("Apply as background job") and undo ("Undo as background job") buttons with inline job status display, kept direct buttons as secondary ("Apply (direct)", "Undo (direct)")
+
+**Studio UI — retry + lineage:**
+- `apps/studio/src/features/jobs/JobsPanel.tsx` — added retry button for eligible failed jobs, retry lineage display (parent → root), exhaust notification
+
+**Tests:**
+- `services/core/tests/test_jobs.py` — 7 new retry unit tests (27 total in file): retry creation, refusal for non-failed/exhausted/unsupported, child retry chain, workspace preservation, SQL persistence
+- `services/core/tests/test_jobs_api.py` — 4 new retry API tests (14 total): HTTP retry returns linked job, non-failed → 409, exhausted → 409, retried job executes and produces artifact
+- `services/core/tests/test_openapi.py` — updated path assertion to include `/api/v1/jobs/{jobId}/retry`
+- `apps/studio/src/features/jobs/JobsPanel.test.tsx` — updated baseJob fixture with retry fields
+- **All tests pass**: 60 shared-types, 165 Core, Studio typecheck passes (pre-existing React 19 testing-library compat issues prevent runtime Studio tests)
+
+**What now works end-to-end:**
+- From the **verification panel**: user clicks "Verify as background job", a `proposal_verification` job is enqueued, worker executes it, result verification artifact appears in the verification list (polled + cached)
+- From the **application panel**: user clicks "Apply as background job", an `application_apply` job runs, live tree is written, application artifact linked
+- From the **undo section**: user clicks "Undo as background job", an `application_undo` job runs, live tree is restored
+- From the **Jobs panel**: failed eligible jobs show "Retry (single attempt remaining)" button; clicking enqueues a new linked child job; exhausted jobs show "No retries remaining"; retry lineage is displayed
+- **SSE**: `job.status.changed` events published for both original (exhaustion) and retry (creation) — existing `useLiveEvents` hook invalidates job queries automatically
+
+**What was intentionally deferred:**
+- Job cancellation, priorities, scheduling, automatic retries
+- Restore-as-job (restore stays synchronous)
+- Multi-node workers
+- EntityJobBadge component (inline per-entity job status) — scope reduced to keep feature minimal
+- Fixing pre-existing React 19 / @testing-library/react `React.act is not a function` compatibility issue
+
+**Cleanup completed:**
+- Updated `docs/agent_memory.md` with cycle 20 start/completion
+- Fixed `test_openapi.py` path assertion
+- Root README "process memory" wording note left for next cycle (minimal scope)
+
 - Files changed (new): `packages/shared-types/src/{jobs,jobs.test}.ts`; Core `job_models.py`, `job_repositories.py`, `job_service.py`, `job_worker.py`, `persistence/repositories/job.py`, `api/routers/jobs.py`, `migrations/versions/004_jobs.py`, `tests/{test_jobs,test_jobs_api}.py`; Studio `features/jobs/{JobsPanel,JobsPanel.test}.tsx`.
 - Files changed (edited): `packages/shared-types/src/{events,index}.ts`; Core `exceptions.py`, `api/{problems,dependencies,router}.py`, `main.py`, `persistence/{models,__init__}.py`, `tests/{conftest,test_openapi,test_persistence}.py`; Studio `api/coreClient.ts`, `app/{queryClient,App}.tsx`, `features/events/useLiveEvents.ts`, `styles.css`, `test/render.tsx`; root/Core/Studio READMEs; `docs/agent_memory.md`. No dependency or lockfile changed (SQLite/SQLAlchemy/Alembic/sse-starlette were already present).
 - Job queue strategy chosen: a durable SQLite-backed queue integrated into the existing Core persistence — a new `jobs` table (Alembic migration `004`, clean up/down) holding `Job` schema-v1 rows with `jobType`, `targetEntityType`/`targetEntityId` (nullable for backup), nullable `workspaceId` (plain indexed column, not an FK, since jobs are loosely-coupled orchestration and `targetEntityId` is polymorphic), `status` (`queued | running | succeeded | failed`, indexed), `attemptCount`, a bounded typed `payload` (proposalId/verificationId/applicationId/label only — no artifact bodies), `resultEntityType`/`resultEntityId`, a bounded `lastError`, and `createdAt`/`startedAt`/`finishedAt`. No Redis/Celery/RabbitMQ/broker.

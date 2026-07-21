@@ -751,6 +751,10 @@ class JobRow(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, index=True)
     started_at = Column(DateTime(timezone=True), nullable=True)
     finished_at = Column(DateTime(timezone=True), nullable=True)
+    retry_of_job_id = Column(Uuid, nullable=True)
+    root_job_id = Column(Uuid, nullable=True)
+    retry_eligible = Column(Boolean, nullable=False, default=True)
+    retry_count = Column(Integer, nullable=False, default=0)
 
     def to_domain(self) -> Job:
         return Job(
@@ -768,6 +772,10 @@ class JobRow(Base):
             created_at=_ensure_tz(self.created_at),
             started_at=_ensure_tz(self.started_at) if self.started_at is not None else None,
             finished_at=_ensure_tz(self.finished_at) if self.finished_at is not None else None,
+            retry_of_job_id=self.retry_of_job_id,
+            root_job_id=self.root_job_id,
+            retry_eligible=bool(self.retry_eligible),
+            retry_count=int(self.retry_count),
         )
 
     @classmethod
@@ -787,4 +795,8 @@ class JobRow(Base):
             created_at=job.created_at,
             started_at=job.started_at,
             finished_at=job.finished_at,
+            retry_of_job_id=job.retry_of_job_id,
+            root_job_id=job.root_job_id,
+            retry_eligible=job.retry_eligible,
+            retry_count=job.retry_count,
         )

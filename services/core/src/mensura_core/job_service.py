@@ -9,6 +9,7 @@ from mensura_core.exceptions import (
     ApplicationNotFoundError,
     ChangeProposalNotFoundError,
     JobNotFoundError,
+    JobRetryNotEligibleError,
 )
 from mensura_core.job_models import (
     EnqueueApplyJob,
@@ -48,6 +49,14 @@ def make_job_event(job: Job) -> MensuraEvent:
 
 class JobService:
     """Enqueue and inspect durable background jobs. Execution belongs to the worker."""
+
+    _RETRYABLE_TYPES: frozenset[JobType] = frozenset(
+        {
+            JobType.PROPOSAL_VERIFICATION,
+            JobType.APPLICATION_APPLY,
+            JobType.APPLICATION_UNDO,
+        }
+    )
 
     def __init__(
         self,
@@ -127,6 +136,53 @@ class JobService:
             self._repo.list_all(workspace_id=workspace_id, status=status, job_type=job_type)
         )
         return JobCollection(items=items, total=len(items))
+
+    def retry(self, job_id: UUID) -> Job:
+        original = self._repo.get(job_id)
+        if original is None:
+            raise JobNotFoundError(job_id)
+        if original.status is not JobStatus.FAILED:
+            raise JobRetryNotEligibleError(
+                job_id,
+                f"Only failed jobs can be retried, but job status is {original.status.value}.",
+            )
+        if not original.retry_eligible:
+            raise JobRetryNotEligibleError(job_id, "This job has already been retried.")
+        if original.job_type not in self._RETRYABLE_TYPES:
+            raise JobRetryNotEligibleError(
+                job_id, f"Job type '{original.job_type.value}' does not support retry."
+            )
+        now = ensure_utc_timestamp(self._clock())
+        retry_job = Job(
+            id=self._id_factory(),
+            job_type=original.job_type,
+            target_entity_type=original.target_entity_type,
+            target_entity_id=original.target_entity_id,
+            workspace_id=original.workspace_id,
+            status=JobStatus.QUEUED,
+            attempt_count=0,
+            payload=original.payload,
+            result_entity_type=None,
+            result_entity_id=None,
+            last_error=None,
+            created_at=now,
+            started_at=None,
+            finished_at=None,
+            retry_of_job_id=original.id,
+            root_job_id=original.root_job_id or original.id,
+            retry_eligible=True,
+            retry_count=0,
+        )
+        result = self._repo.retry_job(
+            original_job_id=original.id, retry_job=retry_job, now=now
+        )
+        if result is None:
+            raise JobRetryNotEligibleError(job_id, "Retry refused.")
+        self._publish(result)
+        original_after = self._repo.get(original.id)
+        if original_after is not None:
+            self._publish(original_after)
+        return result
 
     def _new_job(
         self,

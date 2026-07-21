@@ -450,6 +450,11 @@ class JobNotFoundError(JobError):
         super().__init__(f"Job '{job_id}' was not found.")
 
 
+class JobRetryNotEligibleError(JobError):
+    def __init__(self, job_id: UUID, reason: str) -> None:
+        super().__init__(f"Job '{job_id}' is not eligible for retry: {reason}")
+
+
 class BackupError(CoreError):
     def __init__(self, detail: str) -> None:
         self.detail = detail

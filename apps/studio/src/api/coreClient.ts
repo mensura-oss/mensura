@@ -73,6 +73,7 @@ export interface CoreClient {
   enqueueJob(input: EnqueueJobRequest): Promise<Job>;
   listJobs(): Promise<JobCollection>;
   getJob(jobId: string): Promise<Job>;
+  retryJob(jobId: string): Promise<Job>;
   createRun(taskId: string, input: CreateRunRequest): Promise<Run>;
   executeRun(runId: string, input: ExecuteRunRequest): Promise<Run>;
   configureOpenAIProvider(
@@ -275,6 +276,12 @@ export function createCoreClient(options?: {
     },
     getJob(jobId) {
       return request<Job>(`/api/v1/jobs/${encodeURIComponent(jobId)}`);
+    },
+    retryJob(jobId) {
+      return request<Job>(
+        `/api/v1/jobs/${encodeURIComponent(jobId)}/retry`,
+        { method: "POST" },
+      );
     },
     buildVaultInventory(workspaceId) {
       return request<VaultInventorySnapshot>(

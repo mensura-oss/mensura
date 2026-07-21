@@ -25,6 +25,7 @@ export function createTestClient(
     enqueueJob: () => Promise.reject(new Error("Not implemented in test")),
     listJobs: () => Promise.resolve({ items: [], total: 0 }),
     getJob: () => Promise.reject(new Error("Not implemented in test")),
+    retryJob: () => Promise.reject(new Error("Not implemented in test")),
     configureOpenAIProvider: () =>
       Promise.reject(new Error("Not implemented in test")),
     createContextPack: () => Promise.reject(new Error("Not implemented in test")),
