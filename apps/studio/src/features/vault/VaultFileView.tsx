@@ -1,6 +1,8 @@
 import type { VaultMemoryItemDetail, VaultSourceType } from "@mensura/shared-types";
 import { useEffect, useMemo, useRef } from "react";
 
+import type { OpenInWorkspaceHandler } from "../workspace/types";
+
 /**
  * The subset of a search hit needed to open and anchor a file view. It carries
  * the hit's own `startLine`/`endLine`/`chunkId` so the matched region can be
@@ -44,10 +46,13 @@ export function VaultFileView({
   detail,
   hit,
   onBack,
+  onOpenInWorkspace,
 }: {
   detail: VaultMemoryItemDetail;
   hit: VaultFileHit;
   onBack: () => void;
+  /** When provided, offers to open this hit in the Workspace editor at its lines. */
+  onOpenInWorkspace?: OpenInWorkspaceHandler | undefined;
 }) {
   const firstMatchRef = useRef<HTMLDivElement | null>(null);
   const { rows, matchPresent } = useMemo(
@@ -68,6 +73,21 @@ export function VaultFileView({
         <button type="button" className="button button--quiet" onClick={onBack}>
           ← Back to results
         </button>
+        {onOpenInWorkspace ? (
+          <button
+            type="button"
+            className="button button--secondary"
+            onClick={() =>
+              onOpenInWorkspace({
+                path: hit.path,
+                startLine: hit.startLine,
+                endLine: hit.endLine,
+              })
+            }
+          >
+            Open in Workspace editor →
+          </button>
+        ) : null}
       </div>
       <div className="vault-file-view__head">
         <code className="vault-file-view__path">{hit.path}</code>

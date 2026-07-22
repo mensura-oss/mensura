@@ -171,6 +171,8 @@ Remaining files are classified conservatively from known binary suffixes plus an
 
 Preview accepts only a canonical relative path already present in the latest inventory. Core rejects absolute/backslash/parent/dot-normalized paths, revalidates every component against symlinks and root containment, and rechecks current file/size/binary state. Only strict UTF-8 text is returned, capped at 16 KiB with `previewBytes`, `totalBytes`, and `truncated`. No endpoint writes repository files. Fixed filtering does not interpret `.gitignore` or prove that content is secret-free. Embeddings, chunks, and semantic scores are provided by the separate Vault index below; syntax trees, graph relations, watchers, and per-file durable history are not.
 
+These two read-only endpoints also back the Studio **Workspace** panel's repository tree and read-only Monaco editor: the tree is folded client-side from `GET .../vault/files` and the editor shows the same bounded `GET .../vault/files/content` preview. That surface added **no new Core endpoints** — it deliberately reuses the inventory's existing safety posture (ignore rules, symlink/root containment, size and binary caps) rather than introducing arbitrary filesystem traversal.
+
 ## Vault index, semantic retrieval, and architecture summary
 
 The Vault index is an additive layer over the read-only inventory that makes a workspace's code and docs searchable and summarizable. It is manual and synchronous: `POST /api/v1/vault/index` walks the workspace, chunks and embeds supported files, and replaces the latest index for that workspace (one index per workspace; re-indexing cascade-deletes the prior memory items and chunks). Indexing writes only Core's SQLite database — never the repository.

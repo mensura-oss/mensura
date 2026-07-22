@@ -23,6 +23,7 @@ import { queryKeys } from "../../app/queryClient";
 import { EmptyState, LoadingState } from "../../components/AsyncState";
 import { Panel } from "../../components/Panel";
 import { ProblemDetailsView } from "../../components/ProblemDetailsView";
+import type { OpenInWorkspaceHandler } from "../workspace/types";
 import { VaultFileView } from "./VaultFileView";
 
 const INDEX_NOT_BUILT_TYPE = "urn:mensura:problem:vault-index-not-built";
@@ -46,8 +47,11 @@ type SelectedHit = {
 
 export function VaultIndexPanel({
   activeWorkspaceId,
+  onOpenInWorkspace,
 }: {
   activeWorkspaceId: string | null;
+  /** When provided, a search hit's file view can open in the Workspace editor. */
+  onOpenInWorkspace?: OpenInWorkspaceHandler;
 }) {
   const client = useCoreClient();
   const queryClient = useQueryClient();
@@ -197,6 +201,7 @@ export function VaultIndexPanel({
           }
           onClearHit={() => setSelectedHit(null)}
           memory={memory}
+          onOpenInWorkspace={onOpenInWorkspace}
         />
       ) : null}
     </Panel>
@@ -247,6 +252,7 @@ function VaultIndexReady({
   onSelectHit,
   onClearHit,
   memory,
+  onOpenInWorkspace,
 }: {
   snapshot: VaultIndexSnapshot;
   summarize: UseMutationResult<VaultArchitectureSummary, Error, void, unknown>;
@@ -261,6 +267,7 @@ function VaultIndexReady({
   onSelectHit: (hit: VaultSearchHit) => void;
   onClearHit: () => void;
   memory: UseQueryResult<VaultMemoryItemDetail, Error>;
+  onOpenInWorkspace: OpenInWorkspaceHandler | undefined;
 }) {
   return (
     <div className="vault-index">
@@ -377,7 +384,12 @@ function VaultIndexReady({
               )
             ) : null}
             {selectedHit && memory.isSuccess ? (
-              <VaultFileView detail={memory.data} hit={selectedHit} onBack={onClearHit} />
+              <VaultFileView
+                detail={memory.data}
+                hit={selectedHit}
+                onBack={onClearHit}
+                onOpenInWorkspace={onOpenInWorkspace}
+              />
             ) : null}
           </div>
         </div>
