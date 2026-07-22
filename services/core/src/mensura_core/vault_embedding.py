@@ -36,7 +36,14 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-EMBEDDING_DIM = 512
+# Hashing dimensionality. Sized generously so the sparse inverted index used for sub-linear
+# search (see ``vault_index_repositories``) is *selective*: a chunk's non-zero bucket count is
+# bounded by its distinct tokens (tens to low hundreds) regardless of this value, so a larger
+# space costs no extra storage but sharply cuts hash collisions — turning "shares a query
+# bucket" from "most chunks" (at 512, collisions dominate) into a small candidate set, while
+# also improving lexical discrimination. Changing it changes the lexical vector space, so an
+# index built at a different value reports a re-index (see ``_index_is_compatible``).
+EMBEDDING_DIM = 16384
 
 HASHING_BACKEND = "hashing"
 OLLAMA_BACKEND = "ollama"

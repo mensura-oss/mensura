@@ -46,6 +46,7 @@ def test_migrations_create_clean_schema() -> None:
             "runs",
             "tasks",
             "undos",
+            "vault_chunk_postings",
             "vault_chunks",
             "vault_index_snapshots",
             "vault_inventory_items",

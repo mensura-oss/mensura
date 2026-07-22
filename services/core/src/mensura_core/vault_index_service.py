@@ -1,5 +1,6 @@
 """Vault indexing, retrieval, and architecture-summary service."""
 
+import logging
 from collections import Counter
 from collections.abc import Callable
 from datetime import datetime
@@ -47,6 +48,8 @@ from mensura_core.vault_indexer import (
 from mensura_core.vault_models import VaultNamedCount
 from mensura_core.vault_summary import summarize_architecture
 
+logger = logging.getLogger(__name__)
+
 IdFactory = Callable[[], UUID]
 Clock = Callable[[], datetime]
 
@@ -54,6 +57,11 @@ SUBSTRING_BOOST = 0.5
 SNIPPET_MAX_CHARS = 400
 SUMMARY_LANGUAGE_LIMIT = 64
 SUMMARY_SKIP_REASON_LIMIT = 16
+
+# Upper bound on the accelerated candidate set. Beyond this a query is so broad that the sparse
+# inverted index has no advantage over the exact linear scan, so the repository returns None and
+# search falls back — keeping worst-case work bounded to the linear-scan baseline.
+SEARCH_CANDIDATE_LIMIT = 2000
 
 # Search strategy labels reported honestly in the response so a caller always knows the mode.
 STRATEGY_LEXICAL = "lexical-vector-cosine"
@@ -115,7 +123,6 @@ class VaultIndexService:
         self._require_workspace(workspace_id)
         snapshot = self._require_snapshot(workspace_id)
         needle = query.casefold().strip()
-        vectors = self._index_repository.list_chunk_vectors(workspace_id, source_type=source_type)
 
         # Rank by embedding similarity (primary) when the currently configured embedder produces
         # vectors in the SAME space as the stored index; keep the small exact-substring boost as
@@ -134,10 +141,16 @@ class VaultIndexService:
 
         if query_vector is not None:
             strategy = _strategy_for(current)
+            # Sub-linear candidate retrieval when the workspace has a sparse inverted index;
+            # otherwise (dense/legacy/over-cap/error) the exact linear scan. Scoring is identical.
+            vectors = self._primary_candidates(workspace_id, query_vector, source_type)
             scored = _score_vectors(vectors, query_vector, needle, lambda vector: vector.embedding)
         else:
             strategy = STRATEGY_LEXICAL_FALLBACK
             lexical_query = self._lexical.embed(query)
+            vectors = self._index_repository.list_chunk_vectors(
+                workspace_id, source_type=source_type
+            )
             scored = _score_vectors(
                 vectors, lexical_query, needle, lambda vector: self._lexical.embed(vector.text)
             )
@@ -168,6 +181,42 @@ class VaultIndexService:
             returned=len(hits),
             hits=hits,
         )
+
+    def _primary_candidates(
+        self,
+        workspace_id: UUID,
+        query_vector: dict[str, float],
+        source_type: VaultSourceType | None,
+    ) -> list[ChunkVector]:
+        """Chunks to score: the accelerated candidate set when available, else the full scan.
+
+        Reranking either set with the exact scorer yields identical results — for the sparse
+        lexical space the candidate set is a superset of every chunk that scores > 0 (a shared
+        query bucket ⇒ cosine > 0, and a substring match ⇒ shared buckets), so nothing droppable
+        is lost. The linear scan is used, explicitly and bounded, whenever the accelerated path
+        does not apply: no persisted postings (dense/legacy), a query too broad (over the
+        candidate cap), or an unexpected repository/DB error (a corrupt acceleration index).
+        """
+        query_buckets = [bucket for bucket, weight in query_vector.items() if weight]
+        if query_buckets:
+            try:
+                candidates = self._index_repository.list_candidate_vectors(
+                    workspace_id,
+                    query_buckets,
+                    source_type=source_type,
+                    candidate_limit=SEARCH_CANDIDATE_LIMIT,
+                )
+            except Exception:
+                logger.warning(
+                    "Vault accelerated candidate retrieval failed for workspace %s; "
+                    "falling back to the exact linear scan.",
+                    workspace_id,
+                    exc_info=True,
+                )
+                candidates = None
+            if candidates is not None:
+                return candidates
+        return self._index_repository.list_chunk_vectors(workspace_id, source_type=source_type)
 
     def get_memory_item(self, memory_item_id: UUID) -> VaultMemoryItemDetail:
         item = self._index_repository.get_memory_item(memory_item_id)

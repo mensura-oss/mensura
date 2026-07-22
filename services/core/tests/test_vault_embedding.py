@@ -12,6 +12,7 @@ import pytest
 
 from mensura_core.vault_embedding import (
     DEFAULT_OLLAMA_MODEL,
+    EMBEDDING_DIM,
     ENV_EMBEDDER,
     ENV_OLLAMA_MODEL,
     EmbeddingBackendError,
@@ -49,7 +50,7 @@ def test_hashing_embedder_info_is_lexical() -> None:
     info = HashingEmbedder().info
     assert info.backend == "hashing"
     assert info.semantic is False
-    assert info.dim == 512
+    assert info.dim == EMBEDDING_DIM
 
 
 def test_hashing_embed_documents_matches_single_embed() -> None:

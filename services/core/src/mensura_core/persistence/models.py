@@ -7,6 +7,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -547,6 +548,29 @@ class VaultChunkRow(Base):
             text=self.text,
             embedding=self._embedding,
         )
+
+
+class VaultChunkPostingRow(Base):
+    """Sparse inverted index over chunk embedding buckets for sub-linear candidate retrieval.
+
+    One row per ``(chunk, non-zero embedding bucket)``, written only for acceleration-eligible
+    (sparse lexical) indexes. ``workspace_id`` / ``chunk_id`` are plain indexed columns, not
+    foreign keys (mirroring ``JobRow``): the postings are replaced wholesale per workspace on
+    every (re)index in the same transaction as the chunks, so referential integrity is held by
+    construction and there is no cascade-ordering hazard. The composite ``(workspace_id, bucket)``
+    index is the lookup path — a query reads only the posting lists for its own buckets.
+    """
+
+    __tablename__ = "vault_chunk_postings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    workspace_id = Column(Uuid, nullable=False)
+    chunk_id = Column(Uuid, nullable=False)
+    bucket = Column(String(40), nullable=False)
+
+    __table_args__ = (
+        Index("ix_vault_chunk_postings_workspace_id_bucket", "workspace_id", "bucket"),
+    )
 
 
 class ContextPackRow(Base):
