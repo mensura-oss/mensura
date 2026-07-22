@@ -1526,46 +1526,100 @@ input:focus-visible {
   font-size: 0.62rem;
 }
 
-.vault-chunk-list {
+.vault-file-view {
   display: grid;
-  gap: 0.5rem;
-  max-height: 24rem;
-  overflow: auto;
+  gap: 0.55rem;
+  min-width: 0;
 }
 
-.vault-chunk {
-  display: grid;
-  gap: 0.35rem;
-  border: 1px solid #202a3b;
-  border-radius: 0.45rem;
-  padding: 0.55rem;
-  background: #0d1421;
-}
-
-.vault-chunk--match {
-  border-color: #15803d;
-  background: #0d1f16;
-}
-
-.vault-chunk__heading {
+.vault-file-view__bar {
   display: flex;
+}
+
+.vault-file-view__bar .button {
+  min-height: 28px;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.66rem;
+}
+
+.vault-file-view__head {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.vault-file-view__path {
+  overflow-wrap: anywhere;
+  color: #e6fbff;
+  font: 0.72rem "SFMono-Regular", Consolas, monospace;
+}
+
+.vault-file-view__meta {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.4rem;
   color: #7f8ba3;
   font-size: 0.62rem;
 }
 
-.vault-chunk pre {
+.vault-file-view__note {
   margin: 0;
-  max-height: 14rem;
+  border: 1px solid #7c5312;
+  border-radius: 0.4rem;
+  padding: 0.4rem 0.55rem;
+  color: #fcd9a0;
+  background: #201603;
+  font-size: 0.66rem;
+}
+
+.vault-file-view__code {
+  max-height: 26rem;
   overflow: auto;
-  border-radius: 0.35rem;
-  padding: 0.5rem;
-  color: #cbd5e1;
+  border: 1px solid #202a3b;
+  border-radius: 0.45rem;
+  padding: 0.4rem 0;
   background: #090f1a;
-  font: 0.64rem/1.5 "SFMono-Regular", Consolas, monospace;
+}
+
+.vault-file-line {
+  display: flex;
+  gap: 0.65rem;
+  padding: 0 0.5rem;
+  border-left: 2px solid transparent;
+}
+
+.vault-file-line--match {
+  border-left-color: #22c55e;
+  background: #0f2417;
+}
+
+.vault-file-line__no {
+  flex: none;
+  width: 2.75rem;
+  color: #55637a;
+  font: 0.64rem/1.55 "SFMono-Regular", Consolas, monospace;
+  text-align: right;
+  user-select: none;
+}
+
+.vault-file-line--match .vault-file-line__no {
+  color: #86efac;
+}
+
+.vault-file-line__text {
+  min-width: 0;
+  color: #cbd5e1;
+  font: 0.64rem/1.55 "SFMono-Regular", Consolas, monospace;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.vault-file-gap {
+  padding: 0.2rem 0.5rem;
+  color: #55637a;
+  font-size: 0.6rem;
+  text-align: center;
 }
 
 .vault-index-summary {

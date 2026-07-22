@@ -1,6 +1,5 @@
 import type {
   VaultArchitectureSummary,
-  VaultChunk,
   VaultIndexSnapshot,
   VaultMemoryItemDetail,
   VaultSearchHit,
@@ -23,11 +22,21 @@ import { queryKeys } from "../../app/queryClient";
 import { EmptyState, LoadingState } from "../../components/AsyncState";
 import { Panel } from "../../components/Panel";
 import { ProblemDetailsView } from "../../components/ProblemDetailsView";
+import { VaultFileView } from "./VaultFileView";
 
 const INDEX_NOT_BUILT_TYPE = "urn:mensura:problem:vault-index-not-built";
+const MEMORY_NOT_FOUND_TYPE = "urn:mensura:problem:vault-memory-not-found";
 const SEARCH_LIMIT = 20;
 
-type SelectedHit = { memoryItemId: string; chunkId: string };
+type SelectedHit = {
+  memoryItemId: string;
+  chunkId: string;
+  path: string;
+  sourceType: VaultSourceType;
+  language: string | null;
+  startLine: number;
+  endLine: number;
+};
 
 export function VaultIndexPanel({
   activeWorkspaceId,
@@ -170,8 +179,17 @@ export function VaultIndexPanel({
           onSubmit={handleSearch}
           selectedHit={selectedHit}
           onSelectHit={(hit) =>
-            setSelectedHit({ memoryItemId: hit.memoryItemId, chunkId: hit.chunkId })
+            setSelectedHit({
+              memoryItemId: hit.memoryItemId,
+              chunkId: hit.chunkId,
+              path: hit.path,
+              sourceType: hit.sourceType,
+              language: hit.language,
+              startLine: hit.startLine,
+              endLine: hit.endLine,
+            })
           }
+          onClearHit={() => setSelectedHit(null)}
           memory={memory}
         />
       ) : null}
@@ -215,6 +233,7 @@ function VaultIndexReady({
   onSubmit,
   selectedHit,
   onSelectHit,
+  onClearHit,
   memory,
 }: {
   snapshot: VaultIndexSnapshot;
@@ -228,6 +247,7 @@ function VaultIndexReady({
   onSubmit: (event: FormEvent) => void;
   selectedHit: SelectedHit | null;
   onSelectHit: (hit: VaultSearchHit) => void;
+  onClearHit: () => void;
   memory: UseQueryResult<VaultMemoryItemDetail, Error>;
 }) {
   return (
@@ -313,19 +333,39 @@ function VaultIndexReady({
               />
             ) : null}
           </div>
-          <div className="vault-index-detail" aria-label="Chunk detail">
+          <div className="vault-index-detail" aria-label="File view">
             <div className="vault-section-heading">
-              <strong>Chunk detail</strong>
+              <strong>File view</strong>
             </div>
             {!selectedHit ? (
-              <EmptyState>Select a result to open its file chunk here.</EmptyState>
+              <EmptyState>Select a result to open its file here.</EmptyState>
             ) : null}
             {selectedHit && memory.isPending ? (
-              <LoadingState>Loading indexed chunk…</LoadingState>
+              <LoadingState>Opening file…</LoadingState>
             ) : null}
-            {selectedHit && memory.isError ? <ProblemDetailsView error={memory.error} /> : null}
+            {selectedHit && memory.isError ? (
+              isMemoryStale(memory.error) ? (
+                <div className="vault-file-view">
+                  <div className="vault-file-view__bar">
+                    <button
+                      type="button"
+                      className="button button--quiet"
+                      onClick={onClearHit}
+                    >
+                      ← Back to results
+                    </button>
+                  </div>
+                  <EmptyState>
+                    This result is stale — its file is no longer in the current index. Re-run the
+                    search to refresh results.
+                  </EmptyState>
+                </div>
+              ) : (
+                <ProblemDetailsView error={memory.error} />
+              )
+            ) : null}
             {selectedHit && memory.isSuccess ? (
-              <ChunkDetail detail={memory.data} activeChunkId={selectedHit.chunkId} />
+              <VaultFileView detail={memory.data} hit={selectedHit} onBack={onClearHit} />
             ) : null}
           </div>
         </div>
@@ -426,60 +466,8 @@ function SearchResults({
   );
 }
 
-function ChunkDetail({
-  detail,
-  activeChunkId,
-}: {
-  detail: VaultMemoryItemDetail;
-  activeChunkId: string;
-}) {
-  const item = detail.item;
-  return (
-    <div className="vault-chunk-detail">
-      <dl className="vault-file-metadata">
-        <div>
-          <dt>Path</dt>
-          <dd>
-            <code>{item.path}</code>
-          </dd>
-        </div>
-        <div>
-          <dt>Type</dt>
-          <dd>{item.sourceType}</dd>
-        </div>
-        <div>
-          <dt>Language</dt>
-          <dd>{item.language ?? "—"}</dd>
-        </div>
-        <div>
-          <dt>Size</dt>
-          <dd>{formatBytes(item.sizeBytes)}</dd>
-        </div>
-      </dl>
-      <p className="vault-index-hint">
-        Studio has no code editor yet — the indexed chunk is shown below with its line range.
-      </p>
-      <div className="vault-chunk-list">
-        {detail.chunks.map((chunk) => (
-          <ChunkView key={chunk.id} chunk={chunk} isMatch={chunk.id === activeChunkId} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ChunkView({ chunk, isMatch }: { chunk: VaultChunk; isMatch: boolean }) {
-  return (
-    <article className={`vault-chunk${isMatch ? " vault-chunk--match" : ""}`}>
-      <div className="vault-chunk__heading">
-        <span>
-          Chunk {chunk.chunkIndex + 1} · lines {chunk.startLine}–{chunk.endLine}
-        </span>
-        {isMatch ? <span className="badge badge--clean">Match</span> : null}
-      </div>
-      <pre>{chunk.text}</pre>
-    </article>
-  );
+function isMemoryStale(error: unknown) {
+  return error instanceof CoreApiError && error.problem.type === MEMORY_NOT_FOUND_TYPE;
 }
 
 function ArchitectureSummaryView({ summary }: { summary: VaultArchitectureSummary }) {

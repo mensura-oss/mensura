@@ -195,7 +195,7 @@ describe("VaultIndexPanel", () => {
     });
   });
 
-  it("opens the chunk detail for a search result (file navigation)", async () => {
+  it("opens a search result in a line-numbered file view and highlights the hit range", async () => {
     const user = userEvent.setup();
     const getVaultMemoryItem = vi.fn(() => Promise.resolve(memoryDetail));
     const client = createTestClient({
@@ -212,9 +212,51 @@ describe("VaultIndexPanel", () => {
 
     await user.click(await screen.findByRole("button", { name: /src\/auth\.py/ }));
 
+    // The correct memory item (the path + line-range carrier) is fetched.
     expect(getVaultMemoryItem).toHaveBeenCalledWith(memoryItemId);
-    expect(await screen.findByText(/return verify\(username, password\)/)).toBeVisible();
-    expect(screen.getByText("Match")).toBeVisible();
+
+    // The file view renders the full file content (line 2 is unique to the view,
+    // not the result snippet) and reports the hit's line range …
+    const secondLine = await screen.findByText(/return verify\(username, password\)/);
+    expect(secondLine).toBeVisible();
+    expect(screen.getByText(/^Matched lines 1.2$/)).toBeVisible();
+
+    // … with the hit's line block (chunk lines 1–2) visually highlighted.
+    const lineRow = secondLine.closest(".vault-file-line");
+    expect(lineRow).not.toBeNull();
+    expect(lineRow).toHaveClass("vault-file-line--match");
+
+    // A lightweight back affordance returns to the results-only view.
+    await user.click(screen.getByRole("button", { name: /Back to results/ }));
+    expect(screen.getByText("Select a result to open its file here.")).toBeVisible();
+  });
+
+  it("shows a bounded stale message when a hit's file is gone after re-index", async () => {
+    const user = userEvent.setup();
+    const staleProblem = new CoreApiError({
+      type: "urn:mensura:problem:vault-memory-not-found",
+      title: "Vault memory item not found",
+      status: 404,
+      detail: "No Vault memory item exists for this id.",
+    });
+    const client = createTestClient({
+      getVaultIndex: () => Promise.resolve(snapshot),
+      searchVault: () => Promise.resolve(searchResponse),
+      getVaultMemoryItem: () => Promise.reject(staleProblem),
+    });
+
+    renderWithAppProviders(<VaultIndexPanel activeWorkspaceId={workspaceId} />, client);
+
+    const input = await screen.findByLabelText("Vault search query");
+    await user.type(input, "authenticate");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+
+    await user.click(await screen.findByRole("button", { name: /src\/auth\.py/ }));
+
+    expect(await screen.findByText(/This result is stale/)).toBeVisible();
+    // The raw problem title is not surfaced as an unbounded exception.
+    expect(screen.queryByText("Vault memory item not found")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Back to results/ })).toBeVisible();
   });
 
   it("shows a no-results empty state and suggests refining the query", async () => {
