@@ -78,6 +78,7 @@ export function createTestClient(
       total: 2,
     }),
     listWorkspaces: () => Promise.reject(new Error("Not implemented in test")),
+    listWorkspaceTasks: () => Promise.resolve({ items: [], total: 0 }),
     listVaultFiles: () => Promise.reject(new Error("Not implemented in test")),
     rejectChangeProposal: () => Promise.reject(new Error("Not implemented in test")),
     verifyChangeProposal: () => Promise.reject(new Error("Not implemented in test")),

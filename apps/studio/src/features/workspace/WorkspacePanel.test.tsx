@@ -171,8 +171,13 @@ describe("WorkspacePanel", () => {
         "Not a Git repository — connect one to enable repository features.",
       ),
     ).toBeVisible();
-    // The local task board is independent of the inventory.
-    expect(screen.getByText("Index the repository into Vault")).toBeVisible();
+    // The Core-backed task board renders independently of the inventory; with no
+    // tasks it shows its honest empty state.
+    expect(
+      await screen.findByText(
+        "No tasks yet for this workspace. Create one from the Tasks panel.",
+      ),
+    ).toBeVisible();
   });
 
   it("renders the tree, an Indexed-by-Vault badge, and opens a file into the editor", async () => {

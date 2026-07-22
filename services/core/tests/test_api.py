@@ -127,6 +127,81 @@ def test_create_get_task_and_create_get_run(client: TestClient, tmp_path: Path) 
     assert client.get(f"/api/v1/runs/{run['id']}").json() == run
 
 
+def test_list_workspace_tasks_returns_tasks_with_latest_run(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace = create_workspace(client, root_path=str(tmp_path))
+    first = create_task(client, workspace["id"])
+    second = create_task(client, workspace["id"])
+
+    empty_first = client.get(f"/api/v1/workspaces/{workspace['id']}/tasks")
+    assert empty_first.status_code == 200
+    listed = empty_first.json()
+    assert listed["total"] == 2
+    assert {item["id"] for item in listed["items"]} == {first["id"], second["id"]}
+    # Oldest-first ordering: createdAt is non-decreasing.
+    timestamps = [item["createdAt"] for item in listed["items"]]
+    assert timestamps == sorted(timestamps)
+    # Board fields are present and no run has happened yet.
+    for item in listed["items"]:
+        assert set(item) >= {"id", "title", "description", "status", "createdAt", "latestRun"}
+        assert item["status"] == "ready"
+        assert item["latestRun"] is None
+
+    context_pack = create_context_pack(client, workspace["id"], tmp_path)
+    run_response = client.post(
+        f"/api/v1/tasks/{first['id']}/runs",
+        json={"contextPackId": context_pack["id"]},
+    )
+    assert run_response.status_code == 201
+    run = run_response.json()
+
+    with_run = client.get(f"/api/v1/workspaces/{workspace['id']}/tasks").json()
+    by_id = {item["id"]: item for item in with_run["items"]}
+    assert by_id[first["id"]]["latestRun"] == {
+        "id": run["id"],
+        "status": "queued",
+        "createdAt": run["createdAt"],
+        "updatedAt": run["updatedAt"],
+    }
+    assert by_id[second["id"]]["latestRun"] is None
+
+
+def test_list_workspace_tasks_is_scoped_to_the_workspace(
+    client: TestClient, tmp_path: Path
+) -> None:
+    workspace_a = create_workspace(client, root_path=str(tmp_path / "a"))
+    workspace_b = create_workspace(client, root_path=str(tmp_path / "b"))
+    task_a = create_task(client, workspace_a["id"])
+    create_task(client, workspace_b["id"])
+
+    listed = client.get(f"/api/v1/workspaces/{workspace_a['id']}/tasks").json()
+    assert listed["total"] == 1
+    assert listed["items"][0]["id"] == task_a["id"]
+
+
+def test_list_workspace_tasks_is_empty_for_a_new_workspace(client: TestClient) -> None:
+    workspace = create_workspace(client)
+
+    response = client.get(f"/api/v1/workspaces/{workspace['id']}/tasks")
+
+    assert response.status_code == 200
+    assert response.json() == {"items": [], "total": 0}
+
+
+def test_list_workspace_tasks_unknown_workspace_uses_problem_details(
+    client: TestClient,
+) -> None:
+    workspace_id = uuid4()
+
+    response = client.get(f"/api/v1/workspaces/{workspace_id}/tasks")
+
+    assert response.status_code == 404
+    problem = response.json()
+    assert problem["type"] == "urn:mensura:problem:resource-not-found"
+    assert problem["detail"] == f"Workspace '{workspace_id}' was not found."
+
+
 def test_run_creation_rejects_missing_context_pack(client: TestClient) -> None:
     workspace = create_workspace(client)
     task = create_task(client, workspace["id"])

@@ -2844,6 +2844,13 @@ input:focus-visible {
   justify-self: start;
 }
 
+.workspace-board__card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}
+
 .workspace-board__placeholder {
   padding: 0.35rem;
   color: #3b475c;

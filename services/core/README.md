@@ -59,6 +59,7 @@ JSON property names use camelCase. Resource identifiers are UUIDs and timestamps
 | `POST` | `/api/v1/workspaces/{workspace_id}/context-packs` | Creates or reopens a deterministic immutable pack and returns `201` |
 | `GET` | `/api/v1/workspaces/{workspace_id}/context-packs` | Lists immutable pack summaries |
 | `GET` | `/api/v1/workspaces/{workspace_id}/context-packs/{context_pack_id}` | Returns the exact immutable manifest |
+| `GET` | `/api/v1/workspaces/{workspace_id}/tasks` | Lists the workspace's tasks (oldest first), each with its latest run's compact status |
 | `GET` | `/api/v1/tasks/{task_id}` | Returns one task |
 | `POST` | `/api/v1/tasks` | Creates a ready task in an existing workspace |
 | `GET` | `/api/v1/runs/{run_id}` | Returns one run |
@@ -77,6 +78,8 @@ JSON property names use camelCase. Resource identifiers are UUIDs and timestamps
 | `POST` | `/api/v1/change-proposals/{proposal_id}/apply` | Applies an approved, verified proposal to the live working tree (`{ verificationId }`) and returns `201` |
 | `GET` | `/api/v1/applications/{application_id}` | Returns one application artifact |
 | `GET` | `/api/v1/workspaces/{workspace_id}/applications` | Lists application artifacts for a workspace |
+
+`GET /api/v1/workspaces/{workspace_id}/tasks` returns `{ "items": [...], "total": number }` — the workspace's tasks oldest-first, each a `TaskSummary` (the full `Task` plus a compact `latestRun`). `latestRun` is the task's most recent run reduced to `{ id, status, createdAt, updatedAt }` (`status` ∈ `queued | running | succeeded | failed`), or `null` when the task has never run. It reuses the existing `Task`/`Run` models and adds no run detail beyond that compact status; unknown workspaces return the standard `404` Problem Details. This read-only listing backs the Studio Workspace task board.
 
 `POST /api/v1/tasks/{task_id}/runs` requires this strict body:
 

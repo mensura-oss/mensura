@@ -21,6 +21,7 @@ def test_openapi_exposes_the_implemented_v1_contract(client: TestClient) -> None
         "/api/v1/vault/summarize",
         "/api/v1/workspaces/{workspace_id}/context-packs",
         "/api/v1/workspaces/{workspace_id}/context-packs/{context_pack_id}",
+        "/api/v1/workspaces/{workspace_id}/tasks",
         "/api/v1/tasks/{task_id}",
         "/api/v1/tasks",
         "/api/v1/tasks/{task_id}/runs",

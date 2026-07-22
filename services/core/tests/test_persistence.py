@@ -223,6 +223,58 @@ def test_run_creation_survives_restart() -> None:
         Path(db_path).unlink(missing_ok=True)
 
 
+def test_workspace_task_list_survives_restart_with_latest_run() -> None:
+    db_url, db_path = _temp_db()
+    root = "/tmp/mensura-task-list-test"
+    try:
+        workspace_id = None
+        first_task_id = None
+        second_task_id = None
+        run_id = None
+        with TestClient(
+            create_app(run_migrations_on_startup=True, database_url=db_url, use_sql=True)
+        ) as client:
+            ws_resp = client.post(
+                "/api/v1/workspaces",
+                json={"name": "task list test", "rootPath": root},
+            )
+            workspace_id = ws_resp.json()["id"]
+            first_task_id = client.post(
+                "/api/v1/tasks",
+                json={"workspaceId": workspace_id, "title": "first"},
+            ).json()["id"]
+            second_task_id = client.post(
+                "/api/v1/tasks",
+                json={"workspaceId": workspace_id, "title": "second"},
+            ).json()["id"]
+
+            Path(root).mkdir(parents=True, exist_ok=True)
+            Path(f"{root}/context.txt").write_text("test context\n", encoding="utf-8")
+            client.post(f"/api/v1/workspaces/{workspace_id}/vault/inventory").raise_for_status()
+            pack_id = client.post(
+                f"/api/v1/workspaces/{workspace_id}/context-packs",
+                json={"paths": ["context.txt"]},
+            ).json()["contextPack"]["id"]
+            run_id = client.post(
+                f"/api/v1/tasks/{first_task_id}/runs",
+                json={"contextPackId": pack_id},
+            ).json()["id"]
+
+        with TestClient(
+            create_app(run_migrations_on_startup=False, database_url=db_url, use_sql=True)
+        ) as client2:
+            listed = client2.get(f"/api/v1/workspaces/{workspace_id}/tasks")
+            assert listed.status_code == 200
+            body = listed.json()
+            assert body["total"] == 2
+            by_id = {item["id"]: item for item in body["items"]}
+            assert by_id[first_task_id]["latestRun"]["id"] == run_id
+            assert by_id[first_task_id]["latestRun"]["status"] == "queued"
+            assert by_id[second_task_id]["latestRun"] is None
+    finally:
+        Path(db_path).unlink(missing_ok=True)
+
+
 def test_change_proposal_lineage_survives_restart() -> None:
     db_url, db_path = _temp_db()
     try:

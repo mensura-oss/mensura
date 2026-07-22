@@ -8,9 +8,23 @@ from mensura_core.api.problems import (
     NOT_FOUND_RESPONSE,
     VALIDATION_RESPONSE,
 )
-from mensura_core.models import Run, RunCreate, Task, TaskCreate
+from mensura_core.models import Run, RunCreate, Task, TaskCollection, TaskCreate
 
 router = APIRouter(tags=["tasks"])
+
+
+@router.get(
+    "/workspaces/{workspace_id}/tasks",
+    response_model=TaskCollection,
+    responses={**NOT_FOUND_RESPONSE, **VALIDATION_RESPONSE},
+    summary="List tasks for a workspace",
+)
+async def list_workspace_tasks(
+    workspace_id: UUID,
+    service: CoreServiceDependency,
+) -> TaskCollection:
+    tasks = service.list_workspace_tasks(workspace_id)
+    return TaskCollection(items=tasks, total=len(tasks))
 
 
 @router.get(

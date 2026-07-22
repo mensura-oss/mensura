@@ -65,5 +65,7 @@ export const queryKeys = {
     ["core", "workspaces", workspaceId, "undos"] as const,
   workspaceRepository: (workspaceId: string) =>
     ["core", "workspaces", workspaceId, "repository"] as const,
+  workspaceTasks: (workspaceId: string) =>
+    ["core", "workspaces", workspaceId, "tasks"] as const,
   workspaces: ["core", "workspaces"] as const,
 };

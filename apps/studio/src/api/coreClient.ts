@@ -32,6 +32,7 @@ import type {
   RestoreBackupResponse,
   Run,
   Task,
+  TaskCollection,
   UndoArtifact,
   UndoCollection,
   VaultArchitectureSummary,
@@ -126,6 +127,7 @@ export interface CoreClient {
     proposalId: string,
   ): Promise<ProposalVerificationCollection>;
   listWorkspaces(): Promise<WorkspaceCollection>;
+  listWorkspaceTasks(workspaceId: string): Promise<TaskCollection>;
   listProviders(): Promise<ProviderCollection>;
   verifyChangeProposal(proposalId: string): Promise<ProposalVerification>;
 }
@@ -457,6 +459,11 @@ export function createCoreClient(options?: {
     },
     listWorkspaces() {
       return request<WorkspaceCollection>("/api/v1/workspaces");
+    },
+    listWorkspaceTasks(workspaceId) {
+      return request<TaskCollection>(
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tasks`,
+      );
     },
     listProviders() {
       return request<ProviderCollection>("/api/v1/providers");

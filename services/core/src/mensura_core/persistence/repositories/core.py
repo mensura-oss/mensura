@@ -44,6 +44,16 @@ class SqlCoreRepository:
             session.add(TaskRow.from_domain(task))
             session.commit()
 
+    def list_tasks_by_workspace(self, workspace_id: UUID) -> Sequence[Task]:
+        with self._sf() as session:
+            rows = (
+                session.query(TaskRow)
+                .filter(TaskRow.workspace_id == workspace_id)
+                .order_by(TaskRow.created_at)
+                .all()
+            )
+            return tuple(row.to_domain() for row in rows)
+
     def get_run(self, run_id: UUID) -> Run | None:
         with self._sf() as session:
             row = session.get(RunRow, run_id)
@@ -53,6 +63,16 @@ class SqlCoreRepository:
         with self._sf() as session:
             session.add(RunRow.from_domain(run))
             session.commit()
+
+    def list_runs_by_workspace(self, workspace_id: UUID) -> Sequence[Run]:
+        with self._sf() as session:
+            rows = (
+                session.query(RunRow)
+                .filter(RunRow.workspace_id == workspace_id)
+                .order_by(RunRow.created_at)
+                .all()
+            )
+            return tuple(row.to_domain() for row in rows)
 
     def replace_run_if_status(self, run: Run, expected_status: RunStatus) -> bool:
         with self._sf() as session:

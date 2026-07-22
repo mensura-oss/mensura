@@ -34,7 +34,9 @@ from mensura_core.models import (
     RunStatus,
     Task,
     TaskCreate,
+    TaskRunSummary,
     TaskStatus,
+    TaskSummary,
     Workspace,
     WorkspaceCreate,
     ensure_utc_timestamp,
@@ -125,6 +127,34 @@ class CoreService:
         if task is None:
             raise ResourceNotFoundError("Task", task_id)
         return task
+
+    def list_workspace_tasks(self, workspace_id: UUID) -> list[TaskSummary]:
+        """Return the workspace's tasks (oldest first), each with its latest run's status."""
+
+        self._require_workspace(workspace_id)
+        tasks = self._repository.list_tasks_by_workspace(workspace_id)
+        latest_by_task: dict[UUID, Run] = {}
+        for run in self._repository.list_runs_by_workspace(workspace_id):
+            current = latest_by_task.get(run.task_id)
+            if current is None or (run.created_at, run.id) > (current.created_at, current.id):
+                latest_by_task[run.task_id] = run
+        summaries: list[TaskSummary] = []
+        for task in tasks:
+            latest = latest_by_task.get(task.id)
+            latest_run = (
+                TaskRunSummary(
+                    id=latest.id,
+                    status=latest.status,
+                    created_at=latest.created_at,
+                    updated_at=latest.updated_at,
+                )
+                if latest is not None
+                else None
+            )
+            summaries.append(
+                TaskSummary(**task.model_dump(by_alias=False), latest_run=latest_run)
+            )
+        return summaries
 
     def create_run(self, task_id: UUID, payload: RunCreate) -> Run:
         task = self.get_task(task_id)

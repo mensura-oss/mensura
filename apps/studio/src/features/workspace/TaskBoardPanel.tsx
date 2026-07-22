@@ -1,13 +1,12 @@
-import type { TaskStatus } from "@mensura/shared-types";
+import type { RunStatus, TaskStatus } from "@mensura/shared-types";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
-import { EmptyState } from "../../components/AsyncState";
-import {
-  TASK_BOARD_COLUMNS,
-  groupTasksByColumn,
-  seedWorkspaceTasks,
-  type WorkspaceTask,
-} from "./localTaskBoard";
+import { useCoreClient } from "../../api/CoreClientProvider";
+import { queryKeys } from "../../app/queryClient";
+import { EmptyState, LoadingState } from "../../components/AsyncState";
+import { ProblemDetailsView } from "../../components/ProblemDetailsView";
+import { TASK_BOARD_COLUMNS, groupTasksByColumn } from "./taskBoard";
 
 const STATUS_BADGE_CLASS: Record<TaskStatus, string> = {
   draft: "badge",
@@ -20,34 +19,56 @@ const STATUS_BADGE_CLASS: Record<TaskStatus, string> = {
   cancelled: "badge badge--error",
 };
 
+const RUN_STATUS_BADGE_CLASS: Record<RunStatus, string> = {
+  queued: "badge",
+  running: "badge badge--running",
+  succeeded: "badge badge--succeeded",
+  failed: "badge badge--failed",
+};
+
 /**
- * A minimal, read-only Kanban board for the active workspace. Tasks default to
- * a deterministic local placeholder set (see {@link seedWorkspaceTasks}); an
- * explicit `tasks` prop overrides them, which is how tests and — eventually —
- * real Core tasks feed the board.
+ * A minimal, read-only Kanban board for the active workspace, backed by real
+ * Core tasks (`GET /workspaces/{id}/tasks`). The eight Core task statuses
+ * collapse into three columns (see {@link TASK_BOARD_COLUMNS}); each card keeps
+ * its exact status badge and, when present, a compact latest-run badge. Creating
+ * and editing tasks stays in the dedicated Tasks panel — this is a read surface.
  */
-export function TaskBoardPanel({
-  workspaceId,
-  tasks,
-}: {
-  workspaceId: string;
-  tasks?: readonly WorkspaceTask[];
-}) {
-  const board = useMemo(
-    () => tasks ?? seedWorkspaceTasks(workspaceId),
-    [tasks, workspaceId],
+export function TaskBoardPanel({ workspaceId }: { workspaceId: string }) {
+  const client = useCoreClient();
+
+  const tasks = useQuery({
+    queryKey: queryKeys.workspaceTasks(workspaceId),
+    queryFn: () => client.listWorkspaceTasks(workspaceId),
+    retry: false,
+  });
+
+  const groups = useMemo(
+    () => groupTasksByColumn(tasks.data?.items ?? []),
+    [tasks.data],
   );
-  const groups = useMemo(() => groupTasksByColumn(board), [board]);
 
   return (
     <section className="workspace-board" aria-label="Task board">
       <div className="workspace-board__heading">
         <strong>Task board</strong>
-        <span className="badge">Local preview</span>
+        {tasks.isSuccess ? (
+          <span className="badge">
+            {tasks.data.total} {tasks.data.total === 1 ? "task" : "tasks"}
+          </span>
+        ) : null}
       </div>
-      {board.length === 0 ? (
-        <EmptyState>No tasks yet for this workspace.</EmptyState>
-      ) : (
+
+      {tasks.isPending ? <LoadingState>Loading tasks…</LoadingState> : null}
+
+      {tasks.isError ? <ProblemDetailsView error={tasks.error} /> : null}
+
+      {tasks.isSuccess && tasks.data.items.length === 0 ? (
+        <EmptyState>
+          No tasks yet for this workspace. Create one from the Tasks panel.
+        </EmptyState>
+      ) : null}
+
+      {tasks.isSuccess && tasks.data.items.length > 0 ? (
         <div className="workspace-board__columns">
           {TASK_BOARD_COLUMNS.map((column) => (
             <div
@@ -66,8 +87,18 @@ export function TaskBoardPanel({
                       {task.title}
                     </span>
                     {task.description ? <p>{task.description}</p> : null}
-                    <span className={STATUS_BADGE_CLASS[task.status]}>
-                      {task.status}
+                    <span className="workspace-board__card-badges">
+                      <span className={STATUS_BADGE_CLASS[task.status]}>
+                        {task.status}
+                      </span>
+                      {task.latestRun ? (
+                        <span
+                          className={RUN_STATUS_BADGE_CLASS[task.latestRun.status]}
+                          title="Latest run status"
+                        >
+                          run: {task.latestRun.status}
+                        </span>
+                      ) : null}
                     </span>
                   </li>
                 ))}
@@ -80,9 +111,11 @@ export function TaskBoardPanel({
             </div>
           ))}
         </div>
-      )}
+      ) : null}
+
       <p className="workspace-hint">
-        Illustrative local tasks — not yet connected to Core tasks or runs.
+        Real Core tasks and their latest run status for this workspace. Read-only
+        — create and start tasks from the Tasks panel.
       </p>
     </section>
   );
