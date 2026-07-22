@@ -91,6 +91,8 @@ JSON property names use camelCase. Resource identifiers are UUIDs and timestamps
 
 Core resolves the task first, requires the exact immutable pack to exist, and rejects a pack owned by another workspace. The stored/read run includes `contextPackId` plus a compact `contextPack` reference with workspace/inventory/schema identities and aggregate file/byte evidence. Creation records a queued run only; execution remains a separate explicit action.
 
+This endpoint is also the launch path behind the Studio Workspace task board's **Start run** action. Two properties it deliberately keeps make that a thin client concern: creation is **not gated on task status** (Core accepts a run for a task in any status as long as the pack resolves — the board's `draft`/`ready` eligibility is a client-side affordance, not a server rule), and it **does not mutate `task.status`** (only a new queued `Run` is persisted; the task keeps its status and simply gains a latest run, which is what the board's `latestRun` badge reflects). A stale/mismatched pack still returns the usual `context-pack-not-found` (404) / `context-pack-workspace-mismatch` (409) Problem Details, which the board renders inline.
+
 ## Manual run execution
 
 `POST /api/v1/runs/{run_id}/execute` requires an explicit provider selection:

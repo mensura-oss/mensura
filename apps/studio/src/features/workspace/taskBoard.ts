@@ -1,4 +1,4 @@
-import type { TaskStatus } from "@mensura/shared-types";
+import type { RunStatus, TaskStatus } from "@mensura/shared-types";
 
 export type TaskBoardColumnId = "backlog" | "in-progress" | "done";
 
@@ -29,6 +29,55 @@ export function columnForStatus(status: TaskStatus): TaskBoardColumnId {
     candidate.statuses.includes(status),
   );
   return column ? column.id : "backlog";
+}
+
+/**
+ * Task statuses from which a run may be launched off the board. Launching a run
+ * is the board's one write action; every other status is read-only here. A task
+ * in `draft`/`ready` has not yet progressed into an active/terminal lifecycle, so
+ * it is the honest point to dispatch work into the existing run flow.
+ */
+export const START_RUN_ELIGIBLE_STATUSES: readonly TaskStatus[] = [
+  "draft",
+  "ready",
+];
+
+/** Run statuses that mean a run is still in flight for a task. */
+const ACTIVE_RUN_STATUSES: readonly RunStatus[] = ["queued", "running"];
+
+export interface StartRunEligibility {
+  eligible: boolean;
+  /** A short, bounded reason shown when the action is disabled; `null` when eligible. */
+  reason: string | null;
+}
+
+/**
+ * Decide whether the board may launch a run for a task, and why not when it may
+ * not. Eligibility is a client-side affordance layered on the existing run flow:
+ * Core does not gate `createRun` on task status, it only rejects a missing or
+ * mismatched context pack. A task is launchable only from an eligible status
+ * (see {@link START_RUN_ELIGIBLE_STATUSES}) that does not already have a run in
+ * flight — the latter is the honest in-flight guard, since creating a run leaves
+ * `task.status` unchanged and only attaches a `latestRun`.
+ */
+export function startRunEligibility(task: {
+  status: TaskStatus;
+  latestRun?: { status: RunStatus } | null;
+}): StartRunEligibility {
+  if (!START_RUN_ELIGIBLE_STATUSES.includes(task.status)) {
+    return {
+      eligible: false,
+      reason: `This task is ${task.status} and cannot start a new run.`,
+    };
+  }
+  const latestRun = task.latestRun;
+  if (latestRun && ACTIVE_RUN_STATUSES.includes(latestRun.status)) {
+    return {
+      eligible: false,
+      reason: `A run is already ${latestRun.status} for this task.`,
+    };
+  }
+  return { eligible: true, reason: null };
 }
 
 export type GroupedTasks<T> = Record<TaskBoardColumnId, T[]>;

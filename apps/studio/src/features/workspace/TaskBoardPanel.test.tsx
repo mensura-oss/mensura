@@ -1,12 +1,34 @@
-import type { TaskCollection, TaskSummary } from "@mensura/shared-types";
-import { screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import type {
+  ContextPackSummary,
+  Run,
+  TaskCollection,
+  TaskSummary,
+} from "@mensura/shared-types";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 
 import { CoreApiError } from "../../api/coreClient";
 import { createTestClient, renderWithAppProviders } from "../../test/render";
 import { TaskBoardPanel } from "./TaskBoardPanel";
 
 const workspaceId = "5ca252af-76f4-4aed-9718-ff97b610ce90";
+const contextPackId = `sha256:${"a".repeat(64)}` as const;
+const contextPack: ContextPackSummary = {
+  id: contextPackId,
+  digest: contextPackId,
+  workspaceId,
+  inventoryId: "f6b3c0c2-42a1-4a4d-81f3-82918af050ae",
+  schemaVersion: "1",
+  summary: {
+    fileCount: 2,
+    textFileCount: 2,
+    binaryFileCount: 0,
+    totalFileBytes: 2048,
+    totalPreviewBytes: 1024,
+    truncatedTextFileCount: 0,
+  },
+};
 
 function task(overrides: Partial<TaskSummary> & Pick<TaskSummary, "id" | "title" | "status">): TaskSummary {
   return {
@@ -54,6 +76,12 @@ function column(title: string): HTMLElement {
   return screen
     .getByText(title)
     .closest(".workspace-board__column") as HTMLElement;
+}
+
+function card(title: string): HTMLElement {
+  return screen
+    .getByText(title)
+    .closest(".workspace-board__card") as HTMLElement;
 }
 
 describe("TaskBoardPanel", () => {
@@ -139,5 +167,79 @@ describe("TaskBoardPanel", () => {
     expect(screen.getByText("Resource not found")).toBeVisible();
     expect(screen.getByText("Workspace was not found.")).toBeVisible();
     expect(screen.queryByText("Backlog")).not.toBeInTheDocument();
+  });
+
+  it("offers an enabled Start run only on eligible cards", async () => {
+    const client = createTestClient({
+      listWorkspaceTasks: () => Promise.resolve(collection),
+    });
+
+    renderWithAppProviders(<TaskBoardPanel workspaceId={workspaceId} />, client);
+    await screen.findByText("Draft the plan");
+
+    // draft → eligible; running/approved → disabled with a reason.
+    expect(
+      within(card("Draft the plan")).getByRole("button", { name: "Start run" }),
+    ).toBeEnabled();
+    expect(
+      within(card("Running now")).getByRole("button", { name: "Start run" }),
+    ).toBeDisabled();
+    expect(
+      within(card("All done")).getByRole("button", { name: "Start run" }),
+    ).toBeDisabled();
+  });
+
+  it("launches a run from an eligible card and refreshes the board", async () => {
+    const user = userEvent.setup();
+    const runForTask: Run = {
+      id: "9dc58c91-105d-43af-95cb-32e546ce4c9f",
+      taskId: "t1",
+      contextPackId,
+      contextPack: {
+        id: contextPackId,
+        workspaceId,
+        inventoryId: contextPack.inventoryId,
+        schemaVersion: "1",
+        fileCount: 2,
+        totalFileBytes: 2048,
+        totalPreviewBytes: 1024,
+      },
+      status: "queued",
+      execution: null,
+      startedAt: null,
+      finishedAt: null,
+      createdAt: "2026-07-22T12:05:00Z",
+      updatedAt: "2026-07-22T12:05:00Z",
+    };
+    const listWorkspaceTasks = vi.fn(() => Promise.resolve(collection));
+    const createRun = vi.fn(() => Promise.resolve(runForTask));
+    const client = createTestClient({
+      listWorkspaceTasks,
+      listContextPacks: () => Promise.resolve({ items: [contextPack], total: 1 }),
+      createRun,
+    });
+
+    renderWithAppProviders(<TaskBoardPanel workspaceId={workspaceId} />, client);
+    await screen.findByText("Draft the plan");
+
+    const draftCard = card("Draft the plan");
+    await user.click(
+      within(draftCard).getByRole("button", { name: "Start run" }),
+    );
+    await user.selectOptions(
+      await within(draftCard).findByLabelText("Immutable context pack"),
+      contextPackId,
+    );
+    await user.click(
+      within(draftCard).getByRole("button", { name: "Start run" }),
+    );
+
+    expect(await within(draftCard).findByText("Run queued.")).toBeVisible();
+    // The board reused the existing createRun path for this exact task.
+    expect(createRun).toHaveBeenCalledWith("t1", { contextPackId });
+    // The board refetched after launch (initial load + post-launch invalidation).
+    await waitFor(() =>
+      expect(listWorkspaceTasks.mock.calls.length).toBeGreaterThan(1),
+    );
   });
 });

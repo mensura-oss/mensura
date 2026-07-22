@@ -6,6 +6,7 @@ import { useCoreClient } from "../../api/CoreClientProvider";
 import { queryKeys } from "../../app/queryClient";
 import { EmptyState, LoadingState } from "../../components/AsyncState";
 import { ProblemDetailsView } from "../../components/ProblemDetailsView";
+import { StartRunControl } from "./StartRunControl";
 import { TASK_BOARD_COLUMNS, groupTasksByColumn } from "./taskBoard";
 
 const STATUS_BADGE_CLASS: Record<TaskStatus, string> = {
@@ -100,6 +101,7 @@ export function TaskBoardPanel({ workspaceId }: { workspaceId: string }) {
                         </span>
                       ) : null}
                     </span>
+                    <StartRunControl key={task.id} task={task} />
                   </li>
                 ))}
                 {groups[column.id].length === 0 ? (
@@ -114,8 +116,9 @@ export function TaskBoardPanel({ workspaceId }: { workspaceId: string }) {
       ) : null}
 
       <p className="workspace-hint">
-        Real Core tasks and their latest run status for this workspace. Read-only
-        — create and start tasks from the Tasks panel.
+        Real Core tasks and their latest run status for this workspace. Launch a
+        run on an eligible task with <strong>Start run</strong>; task creation,
+        editing, status changes, and drag-and-drop stay in the dedicated panels.
       </p>
     </section>
   );
