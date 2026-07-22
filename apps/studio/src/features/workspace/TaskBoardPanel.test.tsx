@@ -1,18 +1,26 @@
 import type {
   ContextPackSummary,
   Run,
+  RunStatus,
   TaskCollection,
   TaskSummary,
 } from "@mensura/shared-types";
-import { screen, waitFor, within } from "@testing-library/react";
+import { useQueryClient } from "@tanstack/react-query";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CoreApiError } from "../../api/coreClient";
+import {
+  FakeEventSource,
+  installFakeEventSource,
+} from "../../test/fakeEventSource";
 import { createTestClient, renderWithAppProviders } from "../../test/render";
+import { useLiveEvents } from "../events/useLiveEvents";
 import { TaskBoardPanel } from "./TaskBoardPanel";
 
 const workspaceId = "5ca252af-76f4-4aed-9718-ff97b610ce90";
+const launchedRunId = "9dc58c91-105d-43af-95cb-32e546ce4c9f";
 const contextPackId = `sha256:${"a".repeat(64)}` as const;
 const contextPack: ContextPackSummary = {
   id: contextPackId,
@@ -240,6 +248,204 @@ describe("TaskBoardPanel", () => {
     // The board refetched after launch (initial load + post-launch invalidation).
     await waitFor(() =>
       expect(listWorkspaceTasks.mock.calls.length).toBeGreaterThan(1),
+    );
+  });
+});
+
+describe("TaskBoardPanel — live run status", () => {
+  let restoreEventSource: () => void;
+
+  beforeEach(() => {
+    restoreEventSource = installFakeEventSource();
+  });
+
+  afterEach(() => {
+    restoreEventSource();
+  });
+
+  // The board itself does not subscribe to SSE — `useLiveEvents` is mounted once
+  // at the App level. This harness reproduces that wiring so a test can drive the
+  // full loop: a Core event → cache invalidation → board refetch → re-render.
+  function BoardWithLiveEvents({ workspaceId: id }: { workspaceId: string }) {
+    const queryClient = useQueryClient();
+    useLiveEvents({ workspaceId: id, queryClient });
+    return <TaskBoardPanel workspaceId={id} />;
+  }
+
+  function readyTaskWithRun(status: RunStatus): TaskCollection {
+    return {
+      total: 1,
+      items: [
+        task({
+          id: "t1",
+          title: "Launch me",
+          status: "ready",
+          latestRun: {
+            id: launchedRunId,
+            status,
+            createdAt: "2026-07-22T12:00:00Z",
+            updatedAt: "2026-07-22T12:05:00Z",
+          },
+        }),
+      ],
+    };
+  }
+
+  async function emitRunSucceeded(runWorkspaceId = workspaceId) {
+    await act(async () => {
+      FakeEventSource.latest().emit("run.status.changed", {
+        eventId: "e1",
+        eventType: "run.status.changed",
+        occurredAt: "2026-07-22T12:06:00Z",
+        workspaceId: runWorkspaceId,
+        entityType: "run",
+        entityId: launchedRunId,
+        status: "succeeded",
+        summary: "Run succeeded.",
+      });
+    });
+  }
+
+  it("advances a latestRun badge in place when a run status event arrives", async () => {
+    const listWorkspaceTasks = vi
+      .fn()
+      .mockResolvedValueOnce(readyTaskWithRun("queued"))
+      .mockResolvedValue(readyTaskWithRun("succeeded"));
+    const client = createTestClient({ listWorkspaceTasks });
+
+    renderWithAppProviders(
+      <BoardWithLiveEvents workspaceId={workspaceId} />,
+      client,
+    );
+
+    // A queued run gates a new launch on the still-ready task.
+    expect(await screen.findByText("run: queued")).toBeVisible();
+    expect(
+      within(card("Launch me")).getByRole("button", { name: "Start run" }),
+    ).toBeDisabled();
+
+    await emitRunSucceeded();
+
+    // The board refetched from the event alone — no manual refresh — and the
+    // badge advanced in place; a terminal run re-enables Start run.
+    expect(await screen.findByText("run: succeeded")).toBeVisible();
+    expect(screen.queryByText("run: queued")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        within(card("Launch me")).getByRole("button", { name: "Start run" }),
+      ).toBeEnabled(),
+    );
+    expect(listWorkspaceTasks.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it("ignores a run event scoped to a different workspace", async () => {
+    const listWorkspaceTasks = vi.fn(() =>
+      Promise.resolve(readyTaskWithRun("queued")),
+    );
+    const client = createTestClient({ listWorkspaceTasks });
+
+    renderWithAppProviders(
+      <BoardWithLiveEvents workspaceId={workspaceId} />,
+      client,
+    );
+    await screen.findByText("run: queued");
+    const callsBefore = listWorkspaceTasks.mock.calls.length;
+
+    await emitRunSucceeded("99999999-8888-7777-6666-555555555555");
+
+    // The invalidation is keyed by the event's own workspace, so this board is
+    // never refetched and its badge does not churn.
+    expect(listWorkspaceTasks.mock.calls.length).toBe(callsBefore);
+    expect(screen.getByText("run: queued")).toBeVisible();
+  });
+
+  it("clears the launch confirmation and re-enables Start run once the launched run finishes", async () => {
+    const user = userEvent.setup();
+    const launchedRun: Run = {
+      id: launchedRunId,
+      taskId: "t1",
+      contextPackId,
+      contextPack: {
+        id: contextPackId,
+        workspaceId,
+        inventoryId: contextPack.inventoryId,
+        schemaVersion: "1",
+        fileCount: 2,
+        totalFileBytes: 2048,
+        totalPreviewBytes: 1024,
+      },
+      status: "queued",
+      execution: null,
+      startedAt: null,
+      finishedAt: null,
+      createdAt: "2026-07-22T12:05:00Z",
+      updatedAt: "2026-07-22T12:05:00Z",
+    };
+    const draftOnly: TaskCollection = {
+      total: 1,
+      items: [task({ id: "t1", title: "Launch me", status: "draft" })],
+    };
+    const draftWithRun = (status: RunStatus): TaskCollection => ({
+      total: 1,
+      items: [
+        task({
+          id: "t1",
+          title: "Launch me",
+          status: "draft",
+          latestRun: {
+            id: launchedRunId,
+            status,
+            createdAt: "2026-07-22T12:05:00Z",
+            updatedAt: "2026-07-22T12:05:00Z",
+          },
+        }),
+      ],
+    });
+    const listWorkspaceTasks = vi
+      .fn()
+      .mockResolvedValueOnce(draftOnly)
+      .mockResolvedValueOnce(draftWithRun("queued"))
+      .mockResolvedValue(draftWithRun("succeeded"));
+    const createRun = vi.fn(() => Promise.resolve(launchedRun));
+    const client = createTestClient({
+      listWorkspaceTasks,
+      listContextPacks: () => Promise.resolve({ items: [contextPack], total: 1 }),
+      createRun,
+    });
+
+    renderWithAppProviders(
+      <BoardWithLiveEvents workspaceId={workspaceId} />,
+      client,
+    );
+    await screen.findByText("Launch me");
+
+    await user.click(
+      within(card("Launch me")).getByRole("button", { name: "Start run" }),
+    );
+    await user.selectOptions(
+      await within(card("Launch me")).findByLabelText("Immutable context pack"),
+      contextPackId,
+    );
+    await user.click(
+      within(card("Launch me")).getByRole("button", { name: "Start run" }),
+    );
+
+    // Immediate confirmation, and the board grows a queued badge on refetch.
+    expect(await screen.findByText("Run queued.")).toBeVisible();
+    expect(await screen.findByText("run: queued")).toBeVisible();
+
+    await emitRunSucceeded();
+
+    // The launched run finished: the badge advances and the stale "Run queued."
+    // confirmation yields to live state, re-enabling Start run on the draft task.
+    expect(await screen.findByText("run: succeeded")).toBeVisible();
+    await waitFor(() =>
+      expect(screen.queryByText("Run queued.")).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(
+        within(card("Launch me")).getByRole("button", { name: "Start run" }),
+      ).toBeEnabled(),
     );
   });
 });

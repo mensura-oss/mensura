@@ -384,7 +384,7 @@ Each event carries a compact `MensuraEvent` payload with `eventId`, `eventType`,
 
 ### Supported event types
 
-- `run.status.changed` — emitted when a run transitions to `succeeded` or `failed`
+- `run.status.changed` — emitted when a run transitions to `succeeded` or `failed` (the synchronous `queued→running` step is transient and not separately emitted). Its `workspaceId` is resolved from the run's task, so a client can scope a workspace-level refresh — the Studio Workspace task board keys its `latestRun` badge/eligibility refetch on exactly this field
 - `verification.created` — emitted when a sandbox verification completes
 - `application.created` — emitted when an application to the live tree completes
 - `undo.created` — emitted when an undo operation completes or is refused

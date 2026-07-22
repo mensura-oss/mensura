@@ -42,6 +42,16 @@ export function useLiveEvents({ workspaceId, queryClient }: UseLiveEventsOptions
       switch (parsed.eventType) {
         case "run.status.changed":
           qc.invalidateQueries({ queryKey: queryKeys.run(parsed.entityId) });
+          // Keep the Workspace task board live: a run reaching a terminal state
+          // changes its task's compact `latestRun`, so refetch that workspace's
+          // task list. Scoped by the event's own `workspaceId` (and the stream
+          // is already workspace-filtered), and `invalidateQueries` only refetches
+          // mounted queries, so an unrelated workspace's board never churns.
+          if (parsed.workspaceId) {
+            qc.invalidateQueries({
+              queryKey: queryKeys.workspaceTasks(parsed.workspaceId),
+            });
+          }
           break;
         case "verification.created":
           qc.invalidateQueries({ queryKey: queryKeys.verification(parsed.entityId) });

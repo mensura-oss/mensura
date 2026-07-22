@@ -1,5 +1,5 @@
 import type { ContextPackSummary, TaskSummary } from "@mensura/shared-types";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useCoreClient } from "../../api/CoreClientProvider";
@@ -52,6 +52,11 @@ export function StartRunControl({ task }: { task: TaskSummary }) {
     },
     onSuccess: (run) => {
       queryClient.setQueryData(queryKeys.run(run.id), run);
+      // Collapse the picker now that the run is queued; the confirmation below
+      // takes over, and once the run later advances (see the reset effect) the
+      // control returns to a clean collapsed "Start run" rather than re-opening.
+      setOpen(false);
+      setSelectedContextPackId("");
       void Promise.all([
         queryClient.invalidateQueries({
           queryKey: queryKeys.workspaceTasks(task.workspaceId),
@@ -60,6 +65,29 @@ export function StartRunControl({ task }: { task: TaskSummary }) {
       ]);
     },
   });
+
+  // Once live board state — the post-launch refetch, or a later SSE
+  // `run.status.changed` event surfaced through the board's `workspaceTasks`
+  // query — shows our launched run advancing past `queued`, drop the local
+  // "Run queued." confirmation so it can never linger stale. After the reset
+  // the control is purely eligibility-driven off the live `task` prop: disabled
+  // with "A run is already running…" while running, and re-enabled once the run
+  // is terminal. In isolation (a fixed `task` prop whose `latestRun` never
+  // advances) this never fires, so the confirmation persists as before.
+  const launchedRunId = createRun.data?.id;
+  const latestRunId = task.latestRun?.id;
+  const latestRunStatus = task.latestRun?.status;
+  const resetCreateRun = createRun.reset;
+  useEffect(() => {
+    if (
+      launchedRunId &&
+      latestRunId === launchedRunId &&
+      latestRunStatus !== undefined &&
+      latestRunStatus !== "queued"
+    ) {
+      resetCreateRun();
+    }
+  }, [launchedRunId, latestRunId, latestRunStatus, resetCreateRun]);
 
   // A run launched from this card in this session: show a bounded confirmation.
   // The board refetch will also reflect the new `latestRun` badge on its own.
