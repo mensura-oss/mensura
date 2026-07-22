@@ -161,6 +161,26 @@ class Task(ResourceModel):
     updated_at: AwareDatetime
 
 
+class TaskRunSummary(ResourceModel):
+    """Compact latest-run status for a task, for workspace board/list views."""
+
+    id: UUID
+    status: RunStatus
+    created_at: AwareDatetime
+    updated_at: AwareDatetime
+
+
+class TaskSummary(Task):
+    """A workspace task plus its latest run's compact status, for board/list views."""
+
+    latest_run: TaskRunSummary | None = None
+
+
+class TaskCollection(ApiModel):
+    items: list[TaskSummary]
+    total: Annotated[int, Field(ge=0)]
+
+
 class RunCreate(ApiModel):
     context_pack_id: ContextPackDigest
 

@@ -13,6 +13,7 @@ from mensura_core.api.routers import (
     tasks,
     undos,
     vault,
+    vault_index,
     verifications,
     workspaces,
 )
@@ -24,6 +25,7 @@ router.include_router(runs.router)
 router.include_router(providers.router)
 router.include_router(guard.router)
 router.include_router(vault.router)
+router.include_router(vault_index.router)
 router.include_router(context_packs.router)
 router.include_router(change_proposals.router)
 router.include_router(verifications.router)

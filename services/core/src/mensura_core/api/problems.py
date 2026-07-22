@@ -12,7 +12,6 @@ from mensura_core.exceptions import (
     ApplicationAlreadyExistsError,
     ApplicationContentIncompleteError,
     ApplicationEmptyProposalError,
-    ApplicationInProgressError,
     ApplicationLiveDriftError,
     ApplicationNotFoundError,
     ApplicationProposalNotApprovedError,
@@ -71,12 +70,16 @@ from mensura_core.exceptions import (
     UnsupportedRepositoryStateError,
     UnsupportedWorkspaceStateError,
     VaultBinaryPreviewError,
+    VaultEmbeddingBackendUnavailableError,
     VaultFileExcludedError,
     VaultFileNotFoundError,
+    VaultIndexNotBuiltError,
     VaultInventoryNotBuiltError,
+    VaultMemoryItemNotFoundError,
     VaultPathInvalidError,
     VaultRootInvalidError,
     VerificationSandboxError,
+    WorkspaceWriteInProgressError,
 )
 
 logger = logging.getLogger(__name__)
@@ -100,6 +103,11 @@ VAULT_PATH_INVALID_TYPE = "urn:mensura:problem:vault-path-invalid"
 VAULT_FILE_EXCLUDED_TYPE = "urn:mensura:problem:vault-file-excluded"
 VAULT_BINARY_PREVIEW_TYPE = "urn:mensura:problem:vault-binary-preview-refused"
 VAULT_FILE_NOT_FOUND_TYPE = "urn:mensura:problem:vault-file-not-found"
+VAULT_INDEX_NOT_BUILT_TYPE = "urn:mensura:problem:vault-index-not-built"
+VAULT_MEMORY_NOT_FOUND_TYPE = "urn:mensura:problem:vault-memory-not-found"
+VAULT_EMBEDDING_BACKEND_UNAVAILABLE_TYPE = (
+    "urn:mensura:problem:vault-embedding-backend-unavailable"
+)
 CONTEXT_PACK_INVALID_SELECTION_TYPE = "urn:mensura:problem:context-pack-invalid-selection"
 CONTEXT_PACK_TOO_LARGE_TYPE = "urn:mensura:problem:context-pack-too-large"
 CONTEXT_PACK_FILE_CHANGED_TYPE = "urn:mensura:problem:context-pack-file-changed"
@@ -133,7 +141,7 @@ APPLICATION_VERIFICATION_NOT_FOUND_TYPE = "urn:mensura:problem:application-verif
 APPLICATION_VERIFICATION_MISMATCH_TYPE = "urn:mensura:problem:application-verification-mismatch"
 APPLICATION_VERIFICATION_NOT_PASSED_TYPE = "urn:mensura:problem:application-verification-not-passed"
 APPLICATION_ALREADY_EXISTS_TYPE = "urn:mensura:problem:application-already-exists"
-APPLICATION_IN_PROGRESS_TYPE = "urn:mensura:problem:application-in-progress"
+WORKSPACE_WRITE_IN_PROGRESS_TYPE = "urn:mensura:problem:workspace-write-in-progress"
 APPLICATION_LIVE_DRIFT_TYPE = "urn:mensura:problem:application-live-drift"
 APPLICATION_UNSAFE_PATH_TYPE = "urn:mensura:problem:application-unsafe-path"
 APPLICATION_WRITE_FAILED_TYPE = "urn:mensura:problem:application-write-failed"
@@ -407,6 +415,42 @@ def install_problem_handlers(app: FastAPI) -> None:
             status=404,
             problem_type=VAULT_FILE_NOT_FOUND_TYPE,
             title="Vault file not found",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(VaultIndexNotBuiltError)
+    async def vault_index_not_built_handler(
+        request: Request, error: VaultIndexNotBuiltError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=404,
+            problem_type=VAULT_INDEX_NOT_BUILT_TYPE,
+            title="Vault index not built",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(VaultMemoryItemNotFoundError)
+    async def vault_memory_item_not_found_handler(
+        request: Request, error: VaultMemoryItemNotFoundError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=404,
+            problem_type=VAULT_MEMORY_NOT_FOUND_TYPE,
+            title="Vault memory item not found",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(VaultEmbeddingBackendUnavailableError)
+    async def vault_embedding_backend_unavailable_handler(
+        request: Request, error: VaultEmbeddingBackendUnavailableError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=503,
+            problem_type=VAULT_EMBEDDING_BACKEND_UNAVAILABLE_TYPE,
+            title="Vault embedding backend unavailable",
             detail=error.detail,
         )
 
@@ -806,16 +850,16 @@ def install_problem_handlers(app: FastAPI) -> None:
             detail=error.detail,
         )
 
-    @app.exception_handler(ApplicationInProgressError)
-    async def application_in_progress_handler(
-        request: Request, error: ApplicationInProgressError
+    @app.exception_handler(WorkspaceWriteInProgressError)
+    async def workspace_write_in_progress_handler(
+        request: Request, error: WorkspaceWriteInProgressError
     ) -> JSONResponse:
         return _problem_response(
             request,
             status=409,
-            problem_type=APPLICATION_IN_PROGRESS_TYPE,
-            title="Application already in progress",
-            detail=error.detail,
+            problem_type=WORKSPACE_WRITE_IN_PROGRESS_TYPE,
+            title="A live working-tree write is already in progress",
+            detail=str(error),
         )
 
     @app.exception_handler(ApplicationLiveDriftError)
@@ -1143,4 +1187,7 @@ BACKUP_RESTORE_RESPONSE = problem_response(
 )
 BACKUP_WRITE_RESPONSE = problem_response(
     500, "The database backup could not be created."
+)
+VAULT_EMBEDDING_UNAVAILABLE_RESPONSE = problem_response(
+    503, "The configured Vault embedding backend is unavailable for indexing."
 )

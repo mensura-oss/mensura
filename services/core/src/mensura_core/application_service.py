@@ -1,7 +1,6 @@
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from threading import Lock
 from time import perf_counter
 from uuid import UUID, uuid4
 
@@ -28,7 +27,6 @@ from mensura_core.exceptions import (
     ApplicationAlreadyExistsError,
     ApplicationContentIncompleteError,
     ApplicationEmptyProposalError,
-    ApplicationInProgressError,
     ApplicationNotFoundError,
     ApplicationProposalNotApprovedError,
     ApplicationVerificationMismatchError,
@@ -48,6 +46,7 @@ from mensura_core.repositories import CoreRepository
 from mensura_core.service import utc_now
 from mensura_core.verification_models import ProposalVerification, ProposalVerificationStatus
 from mensura_core.verification_repositories import ProposalVerificationRepository
+from mensura_core.workspace_reservation import WorkspaceWriteReservation
 
 IdFactory = Callable[[], UUID]
 Clock = Callable[[], datetime]
@@ -71,6 +70,7 @@ class ChangeApplicationService:
         application_repository: ApplicationRepository,
         guard_configuration_loader: GuardConfigurationLoader,
         guard_command_runner: GuardCommandRunner,
+        write_reservation: WorkspaceWriteReservation,
         *,
         id_factory: IdFactory = uuid4,
         clock: Clock = utc_now,
@@ -84,13 +84,12 @@ class ChangeApplicationService:
         self._application_repository = application_repository
         self._guard_configuration_loader = guard_configuration_loader
         self._guard_command_runner = guard_command_runner
+        self._write_reservation = write_reservation
         self._id_factory = id_factory
         self._clock = clock
         self._monotonic = monotonic
         self._head_resolver = head_resolver
         self._event_publisher = event_publisher
-        self._active_workspaces: set[UUID] = set()
-        self._active_lock = Lock()
 
     def apply(self, proposal_id: UUID, verification_id: UUID) -> ApplicationArtifact:
         proposal = self._require_proposal(proposal_id)
@@ -105,11 +104,13 @@ class ChangeApplicationService:
             raise ApplicationAlreadyExistsError(proposal.id)
         workspace = self._require_workspace(proposal.workspace_id)
 
-        self._reserve(workspace.id)
-        try:
+        with self._write_reservation.reserve(
+            workspace.id,
+            holder_kind="application_apply",
+            target_entity_type="change_proposal",
+            target_entity_id=proposal.id,
+        ):
             return self._apply_to_live(workspace, proposal, verification)
-        finally:
-            self._release(workspace.id)
 
     def get(self, application_id: UUID) -> ApplicationArtifact:
         application = self._application_repository.get(application_id)
@@ -284,13 +285,3 @@ class ChangeApplicationService:
         if workspace is None:
             raise ResourceNotFoundError("Workspace", workspace_id)
         return workspace
-
-    def _reserve(self, workspace_id: UUID) -> None:
-        with self._active_lock:
-            if workspace_id in self._active_workspaces:
-                raise ApplicationInProgressError(workspace_id)
-            self._active_workspaces.add(workspace_id)
-
-    def _release(self, workspace_id: UUID) -> None:
-        with self._active_lock:
-            self._active_workspaces.discard(workspace_id)

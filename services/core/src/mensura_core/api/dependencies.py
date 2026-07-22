@@ -11,6 +11,7 @@ from mensura_core.job_service import JobService
 from mensura_core.provider_registry import ProviderRegistry
 from mensura_core.service import CoreService
 from mensura_core.undo_service import UndoService
+from mensura_core.vault_index_service import VaultIndexService
 from mensura_core.vault_service import VaultService
 from mensura_core.verification_service import ProposalVerificationService
 
@@ -34,6 +35,13 @@ def get_vault_service(request: Request) -> VaultService:
 
 
 VaultServiceDependency = Annotated[VaultService, Depends(get_vault_service)]
+
+
+def get_vault_index_service(request: Request) -> VaultIndexService:
+    return cast(VaultIndexService, request.app.state.vault_index_service)
+
+
+VaultIndexServiceDependency = Annotated[VaultIndexService, Depends(get_vault_index_service)]
 
 
 def get_context_pack_service(request: Request) -> ContextPackService:

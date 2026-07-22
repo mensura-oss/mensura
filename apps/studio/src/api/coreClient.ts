@@ -32,11 +32,17 @@ import type {
   RestoreBackupResponse,
   Run,
   Task,
+  TaskCollection,
   UndoArtifact,
   UndoCollection,
+  VaultArchitectureSummary,
   VaultFileCollection,
   VaultFilePreview,
+  VaultIndexSnapshot,
   VaultInventorySnapshot,
+  VaultMemoryItemDetail,
+  VaultSearchOptions,
+  VaultSearchResponse,
   Workspace,
   WorkspaceCollection,
 } from "@mensura/shared-types";
@@ -86,6 +92,16 @@ export interface CoreClient {
   createTask(input: CreateTaskRequest): Promise<Task>;
   createWorkspace(input: CreateWorkspaceRequest): Promise<Workspace>;
   buildVaultInventory(workspaceId: string): Promise<VaultInventorySnapshot>;
+  indexVaultWorkspace(workspaceId: string): Promise<VaultIndexSnapshot>;
+  getVaultIndex(workspaceId: string): Promise<VaultIndexSnapshot>;
+  searchVault(
+    workspaceId: string,
+    options: VaultSearchOptions,
+  ): Promise<VaultSearchResponse>;
+  getVaultMemoryItem(memoryItemId: string): Promise<VaultMemoryItemDetail>;
+  summarizeVaultWorkspace(
+    workspaceId: string,
+  ): Promise<VaultArchitectureSummary>;
   getHealth(): Promise<HealthResponse>;
   getContextPack(
     workspaceId: string,
@@ -111,6 +127,7 @@ export interface CoreClient {
     proposalId: string,
   ): Promise<ProposalVerificationCollection>;
   listWorkspaces(): Promise<WorkspaceCollection>;
+  listWorkspaceTasks(workspaceId: string): Promise<TaskCollection>;
   listProviders(): Promise<ProviderCollection>;
   verifyChangeProposal(proposalId: string): Promise<ProposalVerification>;
 }
@@ -289,6 +306,45 @@ export function createCoreClient(options?: {
         { method: "POST" },
       );
     },
+    indexVaultWorkspace(workspaceId) {
+      return request<VaultIndexSnapshot>("/api/v1/vault/index", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspaceId }),
+      });
+    },
+    getVaultIndex(workspaceId) {
+      return request<VaultIndexSnapshot>(
+        `/api/v1/vault/indexes/${encodeURIComponent(workspaceId)}`,
+      );
+    },
+    searchVault(workspaceId, options) {
+      const body: {
+        workspaceId: string;
+        query: string;
+        limit?: number;
+        sourceType?: string;
+      } = { workspaceId, query: options.query };
+      if (options.limit !== undefined) body.limit = options.limit;
+      if (options.sourceType !== undefined) body.sourceType = options.sourceType;
+      return request<VaultSearchResponse>("/api/v1/vault/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    },
+    getVaultMemoryItem(memoryItemId) {
+      return request<VaultMemoryItemDetail>(
+        `/api/v1/vault/memory/${encodeURIComponent(memoryItemId)}`,
+      );
+    },
+    summarizeVaultWorkspace(workspaceId) {
+      return request<VaultArchitectureSummary>("/api/v1/vault/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspaceId }),
+      });
+    },
     createGuardRun(workspaceId, input = {}) {
       return request<GuardRunResponse>(
         `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/guard/runs`,
@@ -403,6 +459,11 @@ export function createCoreClient(options?: {
     },
     listWorkspaces() {
       return request<WorkspaceCollection>("/api/v1/workspaces");
+    },
+    listWorkspaceTasks(workspaceId) {
+      return request<TaskCollection>(
+        `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tasks`,
+      );
     },
     listProviders() {
       return request<ProviderCollection>("/api/v1/providers");

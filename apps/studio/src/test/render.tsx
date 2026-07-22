@@ -45,6 +45,12 @@ export function createTestClient(
     getTask: () => Promise.reject(new Error("Not implemented in test")),
     getVaultFilePreview: () => Promise.reject(new Error("Not implemented in test")),
     getVaultInventory: () => Promise.reject(new Error("Not implemented in test")),
+    indexVaultWorkspace: () => Promise.reject(new Error("Not implemented in test")),
+    getVaultIndex: () => Promise.reject(new Error("Not implemented in test")),
+    searchVault: () => Promise.reject(new Error("Not implemented in test")),
+    getVaultMemoryItem: () => Promise.reject(new Error("Not implemented in test")),
+    summarizeVaultWorkspace: () =>
+      Promise.reject(new Error("Not implemented in test")),
     getWorkspaceRepository: () =>
       Promise.reject(new Error("Not implemented in test")),
     listContextPacks: () => Promise.reject(new Error("Not implemented in test")),
@@ -72,6 +78,7 @@ export function createTestClient(
       total: 2,
     }),
     listWorkspaces: () => Promise.reject(new Error("Not implemented in test")),
+    listWorkspaceTasks: () => Promise.resolve({ items: [], total: 0 }),
     listVaultFiles: () => Promise.reject(new Error("Not implemented in test")),
     rejectChangeProposal: () => Promise.reject(new Error("Not implemented in test")),
     verifyChangeProposal: () => Promise.reject(new Error("Not implemented in test")),

@@ -242,7 +242,6 @@ export function ProposalApplicationSection({
           applyJobStatus={applyJobStatus.data ?? null}
         />
       )}
-      {apply.isError ? <ProblemDetailsView error={apply.error} /> : null}
     </section>
   );
 }

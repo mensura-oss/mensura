@@ -18,6 +18,24 @@ class ResourceConflictError(CoreError):
         super().__init__(detail)
 
 
+class WorkspaceWriteInProgressError(CoreError):
+    """A live working-tree write is already reserved for this workspace.
+
+    Raised by any live-tree writer (application apply or undo) when another writer
+    already holds the workspace's write reservation. The condition is a transient
+    conflict, not a permanent failure: retry once the active operation completes.
+    """
+
+    def __init__(self, workspace_id: UUID, holder_kind: str) -> None:
+        self.workspace_id = workspace_id
+        self.holder_kind = holder_kind
+        super().__init__(
+            f"A live working-tree write for workspace '{workspace_id}' is already in "
+            f"progress (held by '{holder_kind}'). This operation was refused; nothing was "
+            "written. Retry once the active operation completes."
+        )
+
+
 class RepositoryInspectionError(CoreError):
     def __init__(self, detail: str) -> None:
         self.detail = detail
@@ -108,6 +126,29 @@ class VaultBinaryPreviewError(VaultError):
 class VaultFileNotFoundError(VaultError):
     def __init__(self, path: str) -> None:
         super().__init__(f"File '{path}' does not exist in the latest Vault inventory.")
+
+
+class VaultIndexNotBuiltError(VaultError):
+    def __init__(self, workspace_id: UUID) -> None:
+        super().__init__(
+            f"No Vault index exists for workspace '{workspace_id}'. Index the workspace first."
+        )
+
+
+class VaultMemoryItemNotFoundError(VaultError):
+    def __init__(self, memory_item_id: UUID) -> None:
+        super().__init__(f"Vault memory item '{memory_item_id}' was not found.")
+
+
+class VaultEmbeddingBackendUnavailableError(VaultError):
+    def __init__(self, model: str) -> None:
+        super().__init__(
+            f"The Vault embedding backend for model '{model}' is unavailable, so indexing "
+            "cannot produce semantic vectors. Start the local Ollama daemon and pull the model "
+            "(`ollama pull "
+            f"{model}`), or set MENSURA_VAULT_EMBEDDER=hashing to index with the offline "
+            "lexical embedder."
+        )
 
 
 class ContextPackError(CoreError):
@@ -353,11 +394,6 @@ class ApplicationAlreadyExistsError(ChangeApplicationError):
             f"Change proposal '{proposal_id}' has already been applied to the live working "
             "tree. Applications are single-use and are not re-applied automatically."
         )
-
-
-class ApplicationInProgressError(ChangeApplicationError):
-    def __init__(self, workspace_id: UUID) -> None:
-        super().__init__(f"An application for workspace '{workspace_id}' is already in progress.")
 
 
 class ApplicationLiveDriftError(ChangeApplicationError):

@@ -8,7 +8,9 @@ from mensura_core.persistence.models import Base
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False so running migrations at startup does not silently
+    # disable Core's already-created application loggers (backup/job/sweep/retention).
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

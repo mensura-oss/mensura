@@ -35,6 +35,7 @@ from mensura_core.undo_models import (
 )
 from mensura_core.undo_repositories import UndoRepository
 from mensura_core.undo_writer import execute_undo
+from mensura_core.workspace_reservation import WorkspaceWriteReservation
 
 IdFactory = Callable[[], UUID]
 Clock = Callable[[], datetime]
@@ -51,6 +52,7 @@ class UndoService:
         undo_repository: UndoRepository,
         guard_configuration_loader: GuardConfigurationLoader,
         guard_command_runner: GuardCommandRunner,
+        write_reservation: WorkspaceWriteReservation,
         *,
         id_factory: IdFactory = uuid4,
         clock: Clock = utc_now,
@@ -62,6 +64,7 @@ class UndoService:
         self._undo_repository = undo_repository
         self._guard_configuration_loader = guard_configuration_loader
         self._guard_command_runner = guard_command_runner
+        self._write_reservation = write_reservation
         self._id_factory = id_factory
         self._clock = clock
         self._monotonic = monotonic
@@ -75,7 +78,13 @@ class UndoService:
         if self._undo_repository.get_for_application(application.id) is not None:
             raise UndoAlreadyExistsError(application.id)
         workspace = self._require_workspace(application.workspace_id)
-        return self._execute_undo(workspace, application)
+        with self._write_reservation.reserve(
+            workspace.id,
+            holder_kind="application_undo",
+            target_entity_type="application",
+            target_entity_id=application.id,
+        ):
+            return self._execute_undo(workspace, application)
 
     def get(self, undo_id: UUID) -> UndoArtifact:
         undo = self._undo_repository.get(undo_id)

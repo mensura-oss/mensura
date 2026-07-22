@@ -97,6 +97,35 @@ describe("Core client", () => {
     });
   });
 
+  it("lists workspace tasks for an encoded workspace ID", async () => {
+    const collection = {
+      items: [
+        {
+          id: "20c74e92-d9fc-4e65-bfbb-4924cc181ed1",
+          workspaceId: "workspace/id",
+          title: "Wire the board",
+          description: "",
+          status: "ready" as const,
+          assignedRole: null,
+          createdAt: "2026-07-21T10:00:00Z",
+          updatedAt: "2026-07-21T10:00:00Z",
+          latestRun: null,
+        },
+      ],
+      total: 1,
+    };
+    const fetcher = vi.fn(() => Promise.resolve(Response.json(collection)));
+    const client = createCoreClient({ baseUrl: "http://core.test", fetcher });
+
+    await expect(client.listWorkspaceTasks("workspace/id")).resolves.toEqual(
+      collection,
+    );
+    expect(fetcher).toHaveBeenCalledWith(
+      "http://core.test/api/v1/workspaces/workspace%2Fid/tasks",
+      undefined,
+    );
+  });
+
   it("creates a queued run for an encoded task ID", async () => {
     const contextPackId = `sha256:${"a".repeat(64)}` as const;
     const run = {

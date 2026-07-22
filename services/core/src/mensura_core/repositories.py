@@ -21,9 +21,13 @@ class CoreRepository(Protocol):
 
     def add_task(self, task: Task) -> None: ...
 
+    def list_tasks_by_workspace(self, workspace_id: UUID) -> Sequence[Task]: ...
+
     def get_run(self, run_id: UUID) -> Run | None: ...
 
     def add_run(self, run: Run) -> None: ...
+
+    def list_runs_by_workspace(self, workspace_id: UUID) -> Sequence[Run]: ...
 
     def replace_run_if_status(self, run: Run, expected_status: RunStatus) -> bool: ...
 
@@ -63,6 +67,15 @@ class InMemoryCoreRepository:
         with self._lock:
             self._tasks[task.id] = task
 
+    def list_tasks_by_workspace(self, workspace_id: UUID) -> Sequence[Task]:
+        with self._lock:
+            return tuple(
+                sorted(
+                    (task for task in self._tasks.values() if task.workspace_id == workspace_id),
+                    key=lambda task: task.created_at,
+                )
+            )
+
     def get_run(self, run_id: UUID) -> Run | None:
         with self._lock:
             return self._runs.get(run_id)
@@ -70,6 +83,19 @@ class InMemoryCoreRepository:
     def add_run(self, run: Run) -> None:
         with self._lock:
             self._runs[run.id] = run
+
+    def list_runs_by_workspace(self, workspace_id: UUID) -> Sequence[Run]:
+        with self._lock:
+            return tuple(
+                sorted(
+                    (
+                        run
+                        for run in self._runs.values()
+                        if run.context_pack.workspace_id == workspace_id
+                    ),
+                    key=lambda run: run.created_at,
+                )
+            )
 
     def replace_run_if_status(self, run: Run, expected_status: RunStatus) -> bool:
         with self._lock:

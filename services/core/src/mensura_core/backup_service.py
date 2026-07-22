@@ -25,6 +25,7 @@ from mensura_core.exceptions import (
 )
 from mensura_core.models import ensure_utc_timestamp
 from mensura_core.persistence.database import get_alembic_head
+from mensura_core.retention import RetentionPolicy, RetentionResult
 from mensura_core.service import utc_now
 
 logger = logging.getLogger(__name__)
@@ -47,12 +48,14 @@ class BackupService:
         db_path: Path | None = None,
         *,
         event_publisher: EventPublisher | None = None,
+        retention_policy: RetentionPolicy | None = None,
     ) -> None:
         self._engine = engine
         self._repo = backup_repository
         self._backup_dir = backup_dir
         self._db_path = db_path
         self._event_publisher = event_publisher
+        self._retention = retention_policy
 
     def create_backup(self, label: str | None = None) -> BackupArtifact:
         if self._engine is None:
@@ -71,12 +74,16 @@ class BackupService:
         backup_path = backup_dir / filename
 
         try:
-            src = self._engine.raw_connection().driver_connection
-            dst = sqlite3.connect(str(backup_path))
+            raw_connection = self._engine.raw_connection()
             try:
-                src.backup(dst)
+                src = raw_connection.driver_connection
+                dst = sqlite3.connect(str(backup_path))
+                try:
+                    src.backup(dst)
+                finally:
+                    dst.close()
             finally:
-                dst.close()
+                raw_connection.close()
 
             sha256_hex = _compute_sha256(backup_path)
             file_size = backup_path.stat().st_size
@@ -97,6 +104,12 @@ class BackupService:
                 "Backup created: %s (%d bytes, %s)", artifact.id, file_size, sha256_hex[:12]
             )
             self._publish_backup_event(artifact)
+            # Bound the backup directory as new backups arrive. Best-effort: a retention
+            # failure must never fail the backup that was just successfully written.
+            try:
+                self.prune()
+            except Exception:
+                logger.warning("Backup retention pruning failed after create.", exc_info=True)
             return artifact
 
         except Exception as exc:
@@ -117,6 +130,56 @@ class BackupService:
             )
             self._repo.add(artifact)
             raise BackupWriteError(f"Failed to create backup: {exc}") from exc
+
+    def prune(self) -> RetentionResult:
+        """Delete backups beyond the retention policy. Best-effort, never raises for a
+        single failed deletion.
+
+        The newest backup is always kept (``keep_at_least=1``), so this never removes the
+        user's only backup. For each prunable backup the file is unlinked **before** the
+        metadata row is deleted, and a file-unlink failure skips the row deletion — so a
+        surviving row always still refers to its file.
+        """
+        if self._retention is None or not self._retention.enabled:
+            return RetentionResult()
+        backups = tuple(self._repo.list_all())
+        kept, prunable = self._retention.partition(
+            backups, now=utc_now(), timestamp=lambda b: b.created_at
+        )
+        deleted = failed = 0
+        for backup in prunable:
+            file_path = self._backup_dir / backup.storage_path
+            try:
+                file_path.unlink(missing_ok=True)
+            except OSError as error:
+                logger.warning(
+                    "Retention: could not delete backup file '%s' (%s); keeping its metadata.",
+                    file_path,
+                    error,
+                )
+                failed += 1
+                continue
+            try:
+                self._repo.delete(backup.id)
+            except Exception:
+                logger.warning(
+                    "Retention: deleted backup file '%s' but could not delete its row %s.",
+                    file_path,
+                    backup.id,
+                    exc_info=True,
+                )
+                failed += 1
+                continue
+            logger.info(
+                "Retention: pruned backup %s (workspace=n/a, createdAt=%s, path=%s).",
+                backup.id,
+                backup.created_at.isoformat(),
+                backup.storage_path,
+            )
+            deleted += 1
+        return RetentionResult(
+            inspected=len(backups), deleted=deleted, kept=len(kept), failed=failed
+        )
 
     def get_backup(self, backup_id: UUID) -> BackupArtifact:
         backup = self._repo.get(backup_id)
