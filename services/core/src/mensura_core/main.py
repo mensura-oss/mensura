@@ -80,12 +80,13 @@ from mensura_core.undo_repositories import (
     UndoRepository,
 )
 from mensura_core.undo_service import UndoService
+from mensura_core.vault_embedding import Embedder, HashingEmbedder, build_vault_embedder
 from mensura_core.vault_index_repositories import (
     InMemoryVaultIndexRepository,
     VaultIndexRepository,
 )
 from mensura_core.vault_index_service import VaultIndexService
-from mensura_core.vault_indexer import HashingEmbedder, LocalVaultIndexer, VaultIndexBuilder
+from mensura_core.vault_indexer import LocalVaultIndexer, VaultIndexBuilder
 from mensura_core.vault_inventory import LocalVaultInventoryBuilder, VaultInventoryBuilder
 from mensura_core.vault_repositories import (
     InMemoryVaultInventoryRepository,
@@ -139,6 +140,7 @@ def create_app(
     vault_inventory_repository: VaultInventoryRepository | None = None,
     vault_indexer: VaultIndexBuilder | None = None,
     vault_index_repository: VaultIndexRepository | None = None,
+    vault_embedder: Embedder | None = None,
     context_pack_repository: ContextPackRepository | None = None,
     change_proposal_repository: ChangeProposalRepository | None = None,
     provider: ProviderAdapter | None = None,
@@ -253,12 +255,16 @@ def create_app(
         if vault_index_repository is not None
         else (SqlVaultIndexRepository(sf) if use_sql else InMemoryVaultIndexRepository())
     )
-    vault_embedder = HashingEmbedder()
+    # Default to the offline lexical embedder (no probe/network) so tests and the ephemeral app
+    # never touch a daemon; production (`create_sql_app`) injects a probed backend via the
+    # factory. The indexer and the query path share ONE embedder so index and query vectors
+    # always live in the same space within a process.
+    embedder = vault_embedder if vault_embedder is not None else HashingEmbedder()
     app.state.vault_index_service = VaultIndexService(
         core_repository,
-        vault_indexer or LocalVaultIndexer(embedder=vault_embedder),
+        vault_indexer or LocalVaultIndexer(embedder=embedder),
         index_repository,
-        embedder=vault_embedder,
+        embedder=embedder,
     )
     app.state.context_pack_service = ContextPackService(
         core_repository,
@@ -389,8 +395,15 @@ def run() -> None:
 
 
 def create_sql_app() -> FastAPI:
-    """App factory for production use: SQL-backed persistence, migrations, and the job worker."""
+    """App factory for production use: SQL-backed persistence, migrations, and the job worker.
+
+    Selects the Vault embedding backend from environment configuration (``build_vault_embedder``
+    probes a local Ollama daemon and falls back to the offline lexical embedder with a logged
+    reason). Only this production path touches the daemon; ``create_app`` defaults to the
+    offline lexical embedder so the ephemeral app and the test suite never depend on it.
+    """
     return create_app(
+        vault_embedder=build_vault_embedder(),
         run_migrations_on_startup=True,
         use_sql=True,
         enable_worker=True,

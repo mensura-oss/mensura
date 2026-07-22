@@ -3,17 +3,23 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
+from vault_fakes import BrokenEmbedder, FakeSemanticEmbedder
 
 from mensura_core.exceptions import (
     ResourceNotFoundError,
+    VaultEmbeddingBackendUnavailableError,
     VaultIndexNotBuiltError,
     VaultMemoryItemNotFoundError,
 )
 from mensura_core.models import Workspace
 from mensura_core.repositories import InMemoryCoreRepository
+from mensura_core.vault_embedding import Embedder, HashingEmbedder
 from mensura_core.vault_index_models import VaultSourceType
-from mensura_core.vault_index_repositories import InMemoryVaultIndexRepository
-from mensura_core.vault_index_service import VaultIndexService
+from mensura_core.vault_index_repositories import (
+    InMemoryVaultIndexRepository,
+    VaultIndexRepository,
+)
+from mensura_core.vault_index_service import STRATEGY_LEXICAL_FALLBACK, VaultIndexService
 from mensura_core.vault_indexer import LocalVaultIndexer
 
 BASE = datetime(2026, 1, 1, tzinfo=UTC)
@@ -37,8 +43,14 @@ def _make_repo(root: Path) -> None:
     (root / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
 
 
-def _service(root: Path) -> tuple[VaultIndexService, UUID]:
-    core = InMemoryCoreRepository()
+def _service(
+    root: Path,
+    *,
+    embedder: Embedder | None = None,
+    repository: VaultIndexRepository | None = None,
+    core: InMemoryCoreRepository | None = None,
+) -> tuple[VaultIndexService, UUID]:
+    core = core or InMemoryCoreRepository()
     workspace = Workspace(
         id=uuid4(),
         name="demo",
@@ -47,10 +59,13 @@ def _service(root: Path) -> tuple[VaultIndexService, UUID]:
         updated_at=BASE,
     )
     core.add_workspace(workspace)
+    # The indexer and the query path share ONE embedder, matching production wiring.
+    indexer = LocalVaultIndexer(embedder=embedder) if embedder is not None else LocalVaultIndexer()
     service = VaultIndexService(
         core,
-        LocalVaultIndexer(),
-        InMemoryVaultIndexRepository(),
+        indexer,
+        repository or InMemoryVaultIndexRepository(),
+        embedder=embedder,
         clock=lambda: BASE,
     )
     return service, workspace.id
@@ -192,3 +207,77 @@ def test_reindex_replaces_previous_index(tmp_path: Path) -> None:
     assert second.summary.memory_item_count == first.summary.memory_item_count + 1
     # The stale index id is gone; only the latest snapshot answers.
     assert service.get_index(workspace_id).id == second.id
+
+
+# ------------------------------------------------------------------ embedding backend
+
+
+def test_index_summary_records_the_lexical_embedder_by_default(tmp_path: Path) -> None:
+    _make_repo(tmp_path)
+    service, workspace_id = _service(tmp_path)
+    snapshot = service.index_workspace(workspace_id)
+    assert snapshot.summary.embedding is not None
+    assert snapshot.summary.embedding.backend == "hashing"
+    assert snapshot.summary.embedding.semantic is False
+
+
+def test_index_summary_records_the_semantic_backend(tmp_path: Path) -> None:
+    _make_repo(tmp_path)
+    service, workspace_id = _service(tmp_path, embedder=FakeSemanticEmbedder())
+    snapshot = service.index_workspace(workspace_id)
+    assert snapshot.summary.embedding is not None
+    assert snapshot.summary.embedding.backend == "ollama"
+    assert snapshot.summary.embedding.model == "fake-semantic"
+    assert snapshot.summary.embedding.semantic is True
+
+
+def test_semantic_search_beats_lexical_on_a_vocabulary_gap(tmp_path: Path) -> None:
+    """The query 'sign in' shares no tokens with the auth code, so only the semantic
+    embedder can retrieve it — the core reason to move off the lexical baseline."""
+    _make_repo(tmp_path)
+
+    lexical_service, lexical_ws = _service(tmp_path)
+    lexical_service.index_workspace(lexical_ws)
+    lexical = lexical_service.search(lexical_ws, query="sign in", limit=5, source_type=None)
+    assert lexical.strategy == "lexical-vector-cosine"
+    assert lexical.total == 0  # no shared tokens → the lexical model finds nothing
+
+    semantic_service, semantic_ws = _service(tmp_path, embedder=FakeSemanticEmbedder())
+    semantic_service.index_workspace(semantic_ws)
+    semantic = semantic_service.search(semantic_ws, query="sign in", limit=5, source_type=None)
+    assert semantic.strategy == "semantic-cosine:ollama/fake-semantic"
+    assert semantic.total >= 1
+    assert semantic.hits[0].path in {"src/auth.py", "docs/auth.md"}
+    # The unrelated 'render' file shares the concept with neither the query nor auth → excluded.
+    assert all(hit.path != "src/render.py" for hit in semantic.hits)
+
+
+def test_stale_index_from_a_different_backend_degrades_to_honest_lexical(tmp_path: Path) -> None:
+    """A semantic index queried after the backend changed (e.g. Ollama went down) must not
+    score across embedding spaces: it degrades to a lexical re-rank and says 're-index'."""
+    _make_repo(tmp_path)
+    core = InMemoryCoreRepository()
+    repository = InMemoryVaultIndexRepository()
+
+    semantic_service, workspace_id = _service(
+        tmp_path, embedder=FakeSemanticEmbedder(), repository=repository, core=core
+    )
+    semantic_service.index_workspace(workspace_id)
+
+    # Same persisted (semantic) index, but the query path now runs the lexical embedder.
+    lexical_service = VaultIndexService(
+        core, LocalVaultIndexer(), repository, embedder=HashingEmbedder(), clock=lambda: BASE
+    )
+    response = lexical_service.search(
+        workspace_id, query="authenticate password", limit=5, source_type=None
+    )
+    assert response.strategy == STRATEGY_LEXICAL_FALLBACK
+    assert response.hits  # still useful: a lexical re-rank over the stored chunk text
+    assert response.hits[0].path == "src/auth.py"
+
+
+def test_indexing_fails_clearly_when_the_embedding_backend_is_unavailable(tmp_path: Path) -> None:
+    _make_repo(tmp_path)
+    service, workspace_id = _service(tmp_path, embedder=BrokenEmbedder())
+    with pytest.raises(VaultEmbeddingBackendUnavailableError):
+        service.index_workspace(workspace_id)

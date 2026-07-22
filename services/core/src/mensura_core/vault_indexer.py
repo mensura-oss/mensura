@@ -1,30 +1,34 @@
-"""Local, dependency-free Vault indexing: walk → classify → chunk → embed.
+"""Local Vault indexing: walk → classify → chunk → embed.
 
-Retrieval is honest about what it is: chunks and queries are embedded with a deterministic
-*hashing vectorizer* (term frequency over unigrams + bigrams hashed with ``blake2b`` into a
-fixed number of buckets, L2-normalized) and ranked by cosine similarity. This is a lexical
-vector model, not neural/semantic embeddings — but it is fully offline, deterministic, and
-sits behind the :class:`Embedder` protocol so a real embedding model can replace it without
-touching the schema or the service.
+Chunks are embedded through the :class:`Embedder` protocol (see ``vault_embedding``), which
+has two interchangeable local backends: the offline lexical hashing vectorizer
+(:class:`HashingEmbedder`) and a real local neural model served by Ollama
+(``OllamaEmbedder``). The indexer records *which* backend produced its vectors on the built
+index so search can stay honest about the retrieval mode. It never depends on a cloud service.
 
 The walk reuses the read-only inventory's exclusion rules, language map, and safety posture
 (never follow symlinks, never leave the workspace root).
 """
 
 import hashlib
-import math
 import os
 import re
-from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from itertools import pairwise
 from pathlib import Path
 from typing import Protocol
 from uuid import UUID, uuid4
 
 from mensura_core.exceptions import VaultRootInvalidError
+from mensura_core.vault_embedding import (
+    EMBEDDING_DIM,
+    Embedder,
+    EmbedderInfo,
+    HashingEmbedder,
+    cosine_similarity,
+    tokenize,
+)
 from mensura_core.vault_index_models import VaultSkippedFile, VaultSkipReason, VaultSourceType
 from mensura_core.vault_index_repositories import IndexedChunk, IndexedMemoryItem
 from mensura_core.vault_inventory import (
@@ -32,6 +36,27 @@ from mensura_core.vault_inventory import (
     LANGUAGE_BY_NAME,
     VaultInventoryRules,
 )
+
+# Re-exported for backward-compatible imports (`from mensura_core.vault_indexer import ...`);
+# the embedding abstraction now lives in ``vault_embedding``.
+__all__ = [
+    "EMBEDDING_DIM",
+    "BuiltVaultIndex",
+    "Embedder",
+    "EmbedderInfo",
+    "HashingEmbedder",
+    "LocalVaultIndexer",
+    "VaultIndexBuilder",
+    "chunk_code",
+    "chunk_document",
+    "chunk_text",
+    "classify_source_type",
+    "content_digest",
+    "cosine_similarity",
+    "text_digest",
+    "tokenize",
+    "utc_now",
+]
 
 # Indexing size cap: smaller than the 5 MB inventory/preview cap and explicit. Files that
 # pass the inventory exclusion rules but exceed this are skipped as ``too_large``.
@@ -41,8 +66,6 @@ CODE_CHUNK_MAX_LINES = 80
 MAX_CHUNKS_PER_FILE = 200
 SKIPPED_SAMPLE_LIMIT = 100
 CONTROL_CHAR_RATIO = 0.05
-
-EMBEDDING_DIM = 512
 
 DOC_EXTENSIONS = frozenset({".md", ".markdown", ".mdx", ".rst", ".txt", ".adoc", ".text"})
 CONFIG_EXTENSIONS = frozenset(
@@ -73,7 +96,6 @@ CODE_LANGUAGES = frozenset(
     }
 )
 
-_TOKEN_RE = re.compile(r"[a-zA-Z0-9_]+")
 _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s")
 
 IdFactory = Callable[[], UUID]
@@ -84,59 +106,12 @@ def utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-def tokenize(text: str) -> list[str]:
-    return _TOKEN_RE.findall(text.lower())
-
-
 def content_digest(data: bytes) -> str:
     return "sha256:" + hashlib.sha256(data).hexdigest()
 
 
 def text_digest(text: str) -> str:
     return content_digest(text.encode("utf-8"))
-
-
-def _bucket(token: str, dim: int) -> str:
-    digest = hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest()
-    return str(int.from_bytes(digest, "big") % dim)
-
-
-class Embedder(Protocol):
-    def embed(self, text: str) -> dict[str, float]: ...
-
-
-class HashingEmbedder:
-    """Deterministic term-frequency hashing vectorizer over unigrams + bigrams.
-
-    Uses ``blake2b`` (not Python's per-process-salted ``hash()``) so vectors persisted in one
-    process match those computed for a query in another — search survives restarts.
-    """
-
-    def __init__(self, dim: int = EMBEDDING_DIM) -> None:
-        self._dim = dim
-
-    def embed(self, text: str) -> dict[str, float]:
-        tokens = tokenize(text)
-        if not tokens:
-            return {}
-        counts: Counter[str] = Counter()
-        for token in tokens:
-            counts[_bucket(token, self._dim)] += 1.0
-        for first, second in pairwise(tokens):
-            counts[_bucket(f"{first}\x1f{second}", self._dim)] += 1.0
-        norm = math.sqrt(sum(value * value for value in counts.values()))
-        if norm == 0.0:
-            return {}
-        return {bucket: value / norm for bucket, value in counts.items()}
-
-
-def cosine_similarity(left: dict[str, float], right: dict[str, float]) -> float:
-    """Dot product of two L2-normalized sparse vectors (== cosine similarity)."""
-    if not left or not right:
-        return 0.0
-    if len(left) > len(right):
-        left, right = right, left
-    return sum(weight * right.get(bucket, 0.0) for bucket, weight in left.items())
 
 
 def classify_source_type(
@@ -227,6 +202,7 @@ def chunk_text(text: str, source_type: VaultSourceType) -> list[tuple[int, int, 
 class BuiltVaultIndex:
     items: tuple[IndexedMemoryItem, ...]
     skipped_sample: tuple[VaultSkippedFile, ...]
+    embedder_info: EmbedderInfo
     skipped_counts: dict[str, int] = field(default_factory=dict)
     excluded_entry_count: int = 0
 
@@ -278,6 +254,7 @@ class LocalVaultIndexer:
         return BuiltVaultIndex(
             items=tuple(items),
             skipped_sample=tuple(skipped_sample),
+            embedder_info=self._embedder.info,
             skipped_counts=skipped_counts,
             excluded_entry_count=excluded,
         )
@@ -407,6 +384,11 @@ class LocalVaultIndexer:
 
         item_id = self._id_factory()
         indexed_at = self._clock()
+        # Embed every chunk of this file in one batch so a real backend (e.g. Ollama) makes at
+        # most a few HTTP calls per file instead of one per chunk. May raise
+        # ``EmbeddingBackendError`` if the configured backend is unavailable mid-index; the
+        # service turns that into a clear failure rather than a half-embedded index.
+        embeddings = self._embedder.embed_documents([body for _, _, body in ranges])
         chunks = tuple(
             IndexedChunk(
                 id=self._id_factory(),
@@ -417,9 +399,11 @@ class LocalVaultIndexer:
                 char_count=len(chunk_body),
                 digest=text_digest(chunk_body),
                 text=chunk_body,
-                embedding=self._embedder.embed(chunk_body),
+                embedding=embedding,
             )
-            for chunk_index, (start_line, end_line, chunk_body) in enumerate(ranges)
+            for chunk_index, ((start_line, end_line, chunk_body), embedding) in enumerate(
+                zip(ranges, embeddings, strict=True)
+            )
         )
         items.append(
             IndexedMemoryItem(

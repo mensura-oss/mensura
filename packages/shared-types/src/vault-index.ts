@@ -25,12 +25,26 @@ export const VAULT_SKIP_REASONS = [
 ] as const;
 export type VaultSkipReason = (typeof VAULT_SKIP_REASONS)[number];
 
-/** Retrieval strategy Core reports today: a local lexical vector model, not neural embeddings. */
+/**
+ * The lexical fallback strategy string. Core reports `strategy` dynamically:
+ * `lexical-vector-cosine` when the offline lexical embedder is active,
+ * `semantic-cosine:<backend>/<model>` when a real local embedding backend produced the
+ * vectors, or `lexical-fallback:reindex-required` when the index was built by a different
+ * backend than the one now configured (re-index to refresh).
+ */
 export const VAULT_SEARCH_STRATEGY = "lexical-vector-cosine";
 
 export interface VaultSkippedFile {
   path: string;
   reason: VaultSkipReason;
+}
+
+/** Which embedding backend produced an index's chunk vectors. */
+export interface VaultEmbeddingInfo {
+  backend: string;
+  model: string;
+  dim: number;
+  semantic: boolean;
 }
 
 export interface VaultIndexSummary {
@@ -44,6 +58,8 @@ export interface VaultIndexSummary {
   skippedByReason: readonly VaultNamedCount[];
   languages: readonly VaultNamedCount[];
   skippedSample: readonly VaultSkippedFile[];
+  /** Absent on indexes built before this field existed (they were the lexical embedder). */
+  embedding?: VaultEmbeddingInfo;
 }
 
 export interface VaultIndexSnapshot {

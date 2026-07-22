@@ -1,6 +1,6 @@
 # Mensura Core
 
-Mensura Core is the HTTP boundary for tasks and controlled agent execution. The current service implements versioned resource contracts, durable SQLite-backed persistence, read-only local Git inspection, deterministic Vault inventory/retrieval plus a durable Vault index with lexical-vector semantic search and heuristic architecture summaries, immutable context-pack assembly, a manual Ruff/pytest Guard runner, the credential-free deterministic provider, one optional OpenAI BYOK adapter with bounded structured results, separately persisted write-isolated change-proposal review, isolated sandbox verification of approved proposals in temporary Git worktrees, an explicit digest-checked apply-to-live step, bounded digest-guarded undo execution serialized with apply through a unified per-workspace write reservation, safe local backup and restore, a durable SQLite-backed background job queue with an in-process worker, live Server-Sent Event (SSE) status updates, and a once-per-process startup maintenance pass that sweeps orphaned verification sandboxes and prunes backups and terminal jobs under a conservative retention policy. It never commits, stages, pushes, or checks out.
+Mensura Core is the HTTP boundary for tasks and controlled agent execution. The current service implements versioned resource contracts, durable SQLite-backed persistence, read-only local Git inspection, deterministic Vault inventory/retrieval plus a durable Vault index with local semantic search (a real local Ollama embedding model when available, honest offline lexical-vector fallback otherwise) and heuristic architecture summaries, immutable context-pack assembly, a manual Ruff/pytest Guard runner, the credential-free deterministic provider, one optional OpenAI BYOK adapter with bounded structured results, separately persisted write-isolated change-proposal review, isolated sandbox verification of approved proposals in temporary Git worktrees, an explicit digest-checked apply-to-live step, bounded digest-guarded undo execution serialized with apply through a unified per-workspace write reservation, safe local backup and restore, a durable SQLite-backed background job queue with an in-process worker, live Server-Sent Event (SSE) status updates, and a once-per-process startup maintenance pass that sweeps orphaned verification sandboxes and prunes backups and terminal jobs under a conservative retention policy. It never commits, stages, pushes, or checks out.
 
 ## Requirements
 
@@ -179,13 +179,34 @@ The Vault index is an additive layer over the read-only inventory that makes a w
 
 **Chunking.** Docs are split on markdown headings and blank-line paragraph boundaries; code and config are split into bounded fixed line windows (≤80 lines and ≤~1500 chars). Every chunk retains its 1-based inclusive `startLine`/`endLine`, `charCount`, and a SHA-256 `digest`, and traces back to its memory item (`path`, `sourceType`, `language`, content `digest`, `sizeBytes`).
 
-**Retrieval strategy (honest).** Retrieval is a **local, dependency-free lexical vector model**, not neural embeddings. Each chunk and each query is tokenized, its unigrams and bigrams hashed with `blake2b` into a fixed 512-bucket term-frequency vector, and L2-normalized; `POST /api/v1/vault/search` ranks chunks by cosine similarity with a small exact-substring boost, optionally filtered by `sourceType` (`limit` 1–50, default 10). `blake2b` (not Python's per-process-salted `hash()`) keeps persisted vectors stable across restarts, so search is reproducible from the index alone. The embedder sits behind a pluggable `Embedder` protocol; a real embedding model can replace it without a schema or API change. `GET /api/v1/vault/memory/{memory_id}` returns one memory item and its chunk texts.
+**Embedding backends (local-first, honest).** Chunks and queries are embedded through a pluggable `Embedder` protocol (`vault_embedding.py`) with two interchangeable **local** backends. There is no cloud embedding service.
+
+- **`OllamaEmbedder` (real semantic).** Calls a **local Ollama daemon** (`http://localhost:11434/api/embed`, over the already-present `httpx`) to embed text with a real neural model (default `nomic-embed-text`, 768-dim). Vectors are L2-normalized. Setup: install Ollama (`brew install ollama` / [ollama.com](https://ollama.com)), start it (`ollama serve`), and pull the model (`ollama pull nomic-embed-text`).
+- **`HashingEmbedder` (offline lexical fallback).** A deterministic, dependency-free term-frequency hashing vectorizer: unigrams + bigrams hashed with `blake2b` into a fixed 512-bucket vector, L2-normalized. Fully offline and reproducible across restarts, but lexical — it cannot bridge a vocabulary gap (a query and a relevant chunk that share meaning but no literal tokens).
+
+Both return the same L2-normalized sparse-dict shape (a dense embedding is a fully-populated dict keyed by index), so the schema, the persisted `vault_chunks.embedding` JSON column, and cosine ranking are **unchanged** by the switch to real embeddings (no migration).
+
+**Backend selection.** The production app (`create_sql_app`) picks a backend from environment configuration once at startup and records it on each index it builds:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `MENSURA_VAULT_EMBEDDER` | `auto` | `auto` = use Ollama when reachable, else lexical; `ollama` = require Ollama (still falls back to lexical with a logged warning if it is down); `hashing` = force the offline lexical embedder (no probe/network) |
+| `MENSURA_OLLAMA_URL` | `http://localhost:11434` | Ollama daemon base URL |
+| `MENSURA_OLLAMA_EMBED_MODEL` | `nomic-embed-text` | Ollama embedding model |
+
+The ephemeral in-memory `:app` target and the test suite always use the offline lexical embedder (they never touch a daemon). Selection is honest: when Ollama is unavailable the factory logs the reason and the mode degrades to lexical — the product never pretends semantic embeddings are active.
+
+**Retrieval strategy.** `POST /api/v1/vault/search` embeds the query with the same backend and ranks chunks by **embedding cosine similarity (primary)**, keeping a small exact-substring boost as a **secondary** re-rank only, optionally filtered by `sourceType` (`limit` 1–50, default 10). The response `strategy` reports the mode honestly: `semantic-cosine:ollama/<model>` for real embeddings, `lexical-vector-cosine` for the lexical fallback. The index summary carries an `embedding` object (`backend`, `model`, `dim`, `semantic`) so callers know which backend produced the vectors. `GET /api/v1/vault/memory/{memory_id}` returns one memory item and its chunk texts.
+
+**Fallback, mismatch, and re-indexing.** If the embedding backend fails **while indexing**, indexing fails clearly with `503 urn:mensura:problem:vault-embedding-backend-unavailable` rather than persisting a half-embedded (mixed-space) index. At **search** time, if the index was built by a *different* backend than the one now configured — e.g. a semantic index queried after the Ollama daemon went down, or an old lexical index queried with Ollama now on — the service never scores across incompatible vector spaces: it degrades to a lexical re-rank over the stored chunk text and reports `strategy: lexical-fallback:reindex-required`. Old lexical indexes remain fully searchable; to *gain* semantic ranking a workspace must be re-indexed with the backend running (the required backend is visible in the index summary's `embedding` metadata).
+
+**Limitations/tradeoffs.** A 768-dim dense vector is a larger JSON blob than a sparse lexical one (more index disk); real embedding adds one local HTTP round-trip per chunk batch at index time (bounded, batched, local); indexing is still manual + full-replace; cross-file embedding batching is per file today.
 
 **Architecture summary.** `POST /api/v1/vault/summarize` derives a concise, deterministic, non-AI summary from the indexed material: file/code/doc/config counts and total bytes, top languages, top-level directory "modules" (file count, bytes, dominant language), technologies detected from marker files (`package.json`→Node.js, `pyproject.toml`/`requirements.txt`→Python, `Cargo.toml`→Rust, `go.mod`→Go, `Dockerfile`→Docker, `tsconfig.json`→TypeScript, `alembic.ini`→Alembic, …), and heuristic entry points (`main.py`, `index.ts`, `main.rs`, …). It is a first orientation, not a guaranteed-complete or AI-generated design document.
 
 These endpoints now have a user-facing **Studio "Vault memory" panel** (index trigger, indexed/not-indexed status and summary counts, ranked search with a `sourceType` filter, and an on-demand architecture summary), which states the lexical-vector and manual-full-replace limits in the UI. Clicking a search hit opens a read-only **file view** in Studio that reuses `GET /api/v1/vault/memory/{memory_id}` (no new endpoint) to reconstruct a line-numbered rendering of the file from its indexed chunks and scroll to / highlight the hit's line range; a stale hit whose memory item was dropped by a re-index surfaces the existing `urn:mensura:problem:vault-memory-not-found` 404 as a bounded message.
 
-Deferred: full graph memory and linked task memory, branch-aware or cross-workspace shared memory, real neural/semantic embeddings, incremental/watched re-indexing, and in-editor navigation to a file/line from a search hit (Studio currently opens the indexed chunk with its line range).
+Deferred: full graph memory and linked task memory, branch-aware or cross-workspace shared memory, incremental/watched re-indexing, cross-file embedding batching and an approximate-nearest-neighbor index (search is a linear scan today, fine for MVP-scale repositories), automatic re-index when the embedding backend changes, and in-editor navigation to a file/line from a search hit (Studio currently opens the indexed chunk with its line range). Real local neural embeddings now ship (Ollama), replacing the lexical-only baseline; a fully in-process embedding model (no daemon) remains deferred to avoid heavy native dependencies.
 
 ## Immutable context packs
 
@@ -264,7 +285,8 @@ Vault additionally uses:
 - `urn:mensura:problem:vault-binary-preview-refused` (`415`);
 - `urn:mensura:problem:vault-file-not-found` (`404`);
 - `urn:mensura:problem:vault-index-not-built` (`404`);
-- `urn:mensura:problem:vault-memory-not-found` (`404`).
+- `urn:mensura:problem:vault-memory-not-found` (`404`);
+- `urn:mensura:problem:vault-embedding-backend-unavailable` (`503`) when the configured embedding backend cannot produce vectors during indexing.
 
 Context packs additionally use:
 

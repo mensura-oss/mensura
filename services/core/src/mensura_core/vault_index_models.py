@@ -48,6 +48,20 @@ class VaultSkippedFile(ResourceModel):
     reason: VaultSkipReason
 
 
+class VaultEmbeddingInfo(ResourceModel):
+    """Which embedding backend produced an index's chunk vectors.
+
+    Recorded so search can report the retrieval mode honestly and detect a stale index (one
+    built by a different backend than the one now configured). ``semantic`` is ``True`` only
+    for real neural embeddings; the lexical hashing fallback reports ``False``.
+    """
+
+    backend: Annotated[str, StringConstraints(min_length=1, max_length=40)]
+    model: Annotated[str, StringConstraints(min_length=1, max_length=120)]
+    dim: Annotated[int, Field(ge=0)]
+    semantic: bool
+
+
 class VaultIndexSummary(ResourceModel):
     memory_item_count: Annotated[int, Field(ge=0)]
     chunk_count: Annotated[int, Field(ge=0)]
@@ -59,6 +73,9 @@ class VaultIndexSummary(ResourceModel):
     skipped_by_reason: Annotated[list[VaultNamedCount], Field(max_length=16)]
     languages: Annotated[list[VaultNamedCount], Field(max_length=64)]
     skipped_sample: Annotated[list[VaultSkippedFile], Field(max_length=100)]
+    # Additive + optional: absent on indexes built before this field existed (they were the
+    # lexical hashing embedder). Stored inside the JSON summary column — no migration.
+    embedding: VaultEmbeddingInfo | None = None
 
 
 class VaultIndexSnapshot(ResourceModel):

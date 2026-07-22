@@ -140,6 +140,17 @@ class VaultMemoryItemNotFoundError(VaultError):
         super().__init__(f"Vault memory item '{memory_item_id}' was not found.")
 
 
+class VaultEmbeddingBackendUnavailableError(VaultError):
+    def __init__(self, model: str) -> None:
+        super().__init__(
+            f"The Vault embedding backend for model '{model}' is unavailable, so indexing "
+            "cannot produce semantic vectors. Start the local Ollama daemon and pull the model "
+            "(`ollama pull "
+            f"{model}`), or set MENSURA_VAULT_EMBEDDER=hashing to index with the offline "
+            "lexical embedder."
+        )
+
+
 class ContextPackError(CoreError):
     def __init__(self, detail: str) -> None:
         self.detail = detail

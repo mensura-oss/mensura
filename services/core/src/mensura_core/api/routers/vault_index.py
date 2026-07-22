@@ -3,7 +3,11 @@ from uuid import UUID
 from fastapi import APIRouter, status
 
 from mensura_core.api.dependencies import VaultIndexServiceDependency
-from mensura_core.api.problems import NOT_FOUND_RESPONSE, VALIDATION_RESPONSE
+from mensura_core.api.problems import (
+    NOT_FOUND_RESPONSE,
+    VALIDATION_RESPONSE,
+    VAULT_EMBEDDING_UNAVAILABLE_RESPONSE,
+)
 from mensura_core.vault_index_models import (
     VaultArchitectureSummary,
     VaultIndexRequest,
@@ -21,7 +25,11 @@ router = APIRouter(prefix="/vault", tags=["vault-index"])
     "/index",
     response_model=VaultIndexSnapshot,
     status_code=status.HTTP_201_CREATED,
-    responses={**NOT_FOUND_RESPONSE, **VALIDATION_RESPONSE},
+    responses={
+        **NOT_FOUND_RESPONSE,
+        **VALIDATION_RESPONSE,
+        **VAULT_EMBEDDING_UNAVAILABLE_RESPONSE,
+    },
     summary="Index a workspace into Vault memory items and chunks",
 )
 def index_workspace(

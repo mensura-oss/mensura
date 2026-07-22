@@ -26,6 +26,7 @@ from test_undo_api import (
     init_repository,
     write_fixture_files,
 )
+from vault_fakes import FakeSemanticEmbedder
 
 from mensura_core.main import create_app
 from mensura_core.persistence.database import get_alembic_head
@@ -345,3 +346,40 @@ def test_vault_index_persists_and_survives_restart(durable_env: dict, tmp_path: 
         )
         assert summary.status_code == 200
         assert "Python" in summary.json()["technologies"]
+
+
+def test_semantic_dense_vectors_survive_restart(durable_env: dict, tmp_path: Path) -> None:
+    """Index with a (fake) neural embedder through the real SQLite path, then prove the dense
+    vectors round-trip and semantic search still works from a fresh process on the same DB."""
+    root = tmp_path / "workspace"
+    root.mkdir()
+    _write_vault_fixture(root)
+
+    def app() -> FastAPI:
+        return create_app(
+            run_migrations_on_startup=True,
+            database_url=durable_env["database_url"],
+            use_sql=True,
+            vault_embedder=FakeSemanticEmbedder(),
+        )
+
+    with TestClient(app()) as client:
+        workspace_id = client.post(
+            "/api/v1/workspaces", json={"name": "vault", "rootPath": str(root)}
+        ).json()["id"]
+        indexed = client.post("/api/v1/vault/index", json={"workspaceId": workspace_id})
+        assert indexed.status_code == 201
+        assert indexed.json()["summary"]["embedding"]["backend"] == "ollama"
+        assert indexed.json()["summary"]["embedding"]["semantic"] is True
+
+    # A second process on the same database file — dense JSON vectors are read back, not rebuilt.
+    with TestClient(app()) as restarted:
+        search = restarted.post(
+            "/api/v1/vault/search",
+            json={"workspaceId": workspace_id, "query": "sign in"},
+        )
+        assert search.status_code == 200
+        body = search.json()
+        assert body["strategy"] == "semantic-cosine:ollama/fake-semantic"
+        assert body["hits"], "semantic search over persisted dense vectors returned nothing"
+        assert body["hits"][0]["path"] in {"src/auth.py", "docs/guide.md"}

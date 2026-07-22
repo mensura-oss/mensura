@@ -70,6 +70,7 @@ from mensura_core.exceptions import (
     UnsupportedRepositoryStateError,
     UnsupportedWorkspaceStateError,
     VaultBinaryPreviewError,
+    VaultEmbeddingBackendUnavailableError,
     VaultFileExcludedError,
     VaultFileNotFoundError,
     VaultIndexNotBuiltError,
@@ -104,6 +105,9 @@ VAULT_BINARY_PREVIEW_TYPE = "urn:mensura:problem:vault-binary-preview-refused"
 VAULT_FILE_NOT_FOUND_TYPE = "urn:mensura:problem:vault-file-not-found"
 VAULT_INDEX_NOT_BUILT_TYPE = "urn:mensura:problem:vault-index-not-built"
 VAULT_MEMORY_NOT_FOUND_TYPE = "urn:mensura:problem:vault-memory-not-found"
+VAULT_EMBEDDING_BACKEND_UNAVAILABLE_TYPE = (
+    "urn:mensura:problem:vault-embedding-backend-unavailable"
+)
 CONTEXT_PACK_INVALID_SELECTION_TYPE = "urn:mensura:problem:context-pack-invalid-selection"
 CONTEXT_PACK_TOO_LARGE_TYPE = "urn:mensura:problem:context-pack-too-large"
 CONTEXT_PACK_FILE_CHANGED_TYPE = "urn:mensura:problem:context-pack-file-changed"
@@ -435,6 +439,18 @@ def install_problem_handlers(app: FastAPI) -> None:
             status=404,
             problem_type=VAULT_MEMORY_NOT_FOUND_TYPE,
             title="Vault memory item not found",
+            detail=error.detail,
+        )
+
+    @app.exception_handler(VaultEmbeddingBackendUnavailableError)
+    async def vault_embedding_backend_unavailable_handler(
+        request: Request, error: VaultEmbeddingBackendUnavailableError
+    ) -> JSONResponse:
+        return _problem_response(
+            request,
+            status=503,
+            problem_type=VAULT_EMBEDDING_BACKEND_UNAVAILABLE_TYPE,
+            title="Vault embedding backend unavailable",
             detail=error.detail,
         )
 
@@ -1171,4 +1187,7 @@ BACKUP_RESTORE_RESPONSE = problem_response(
 )
 BACKUP_WRITE_RESPONSE = problem_response(
     500, "The database backup could not be created."
+)
+VAULT_EMBEDDING_UNAVAILABLE_RESPONSE = problem_response(
+    503, "The configured Vault embedding backend is unavailable for indexing."
 )
