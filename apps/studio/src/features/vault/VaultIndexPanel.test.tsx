@@ -293,4 +293,86 @@ describe("VaultIndexPanel", () => {
     expect(screen.getByText("docs")).toBeVisible();
     expect(summarizeVaultWorkspace).toHaveBeenCalledWith(workspaceId);
   });
+
+  it("badges the summary as semantic when the index carries a neural embedding backend", async () => {
+    const semanticSnapshot: VaultIndexSnapshot = {
+      ...snapshot,
+      summary: {
+        ...snapshot.summary,
+        embedding: { backend: "ollama", model: "nomic-embed-text", dim: 768, semantic: true },
+      },
+    };
+    const client = createTestClient({ getVaultIndex: () => Promise.resolve(semanticSnapshot) });
+
+    renderWithAppProviders(<VaultIndexPanel activeWorkspaceId={workspaceId} />, client);
+
+    expect(await screen.findByText("Semantic search active")).toBeVisible();
+    expect(screen.getByText("ollama / nomic-embed-text")).toBeVisible();
+  });
+
+  it("badges the summary as lexical when the index was built by the lexical backend", async () => {
+    const lexicalSnapshot: VaultIndexSnapshot = {
+      ...snapshot,
+      summary: {
+        ...snapshot.summary,
+        embedding: { backend: "hashing", model: "blake2b-tf-512", dim: 512, semantic: false },
+      },
+    };
+    const client = createTestClient({ getVaultIndex: () => Promise.resolve(lexicalSnapshot) });
+
+    renderWithAppProviders(<VaultIndexPanel activeWorkspaceId={workspaceId} />, client);
+
+    expect(await screen.findByText("Lexical search active")).toBeVisible();
+    expect(screen.getByText("blake2b-tf-512")).toBeVisible();
+  });
+
+  it("treats an index with no embedding metadata as a legacy lexical index", async () => {
+    // `snapshot` carries no `summary.embedding` — a pre-embedding-backend (legacy) index.
+    const client = createTestClient({ getVaultIndex: () => Promise.resolve(snapshot) });
+
+    renderWithAppProviders(<VaultIndexPanel activeWorkspaceId={workspaceId} />, client);
+
+    expect(await screen.findByText("Lexical search active")).toBeVisible();
+    expect(screen.getByText(/legacy index — re-index for semantic/)).toBeVisible();
+  });
+
+  it("flags a lexical fallback strategy near the results after a query", async () => {
+    const user = userEvent.setup();
+    const client = createTestClient({
+      getVaultIndex: () => Promise.resolve(snapshot),
+      searchVault: () =>
+        Promise.resolve({ ...searchResponse, strategy: "lexical-fallback:reindex-required" }),
+    });
+
+    renderWithAppProviders(<VaultIndexPanel activeWorkspaceId={workspaceId} />, client);
+
+    const input = await screen.findByLabelText("Vault search query");
+    await user.type(input, "authenticate");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+
+    expect(
+      await screen.findByText("Lexical fallback — re-index for semantic search"),
+    ).toBeVisible();
+  });
+
+  it("labels semantic ranking near the results when the query ranked semantically", async () => {
+    const user = userEvent.setup();
+    const client = createTestClient({
+      getVaultIndex: () => Promise.resolve(snapshot),
+      searchVault: () =>
+        Promise.resolve({
+          ...searchResponse,
+          strategy: "semantic-cosine:ollama/nomic-embed-text",
+        }),
+    });
+
+    renderWithAppProviders(<VaultIndexPanel activeWorkspaceId={workspaceId} />, client);
+
+    const input = await screen.findByLabelText("Vault search query");
+    await user.type(input, "authenticate");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+
+    expect(await screen.findByText("Ranked by semantic similarity")).toBeVisible();
+    expect(screen.getByText("ollama/nomic-embed-text")).toBeVisible();
+  });
 });

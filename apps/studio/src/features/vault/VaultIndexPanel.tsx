@@ -1,5 +1,6 @@
 import type {
   VaultArchitectureSummary,
+  VaultEmbeddingInfo,
   VaultIndexSnapshot,
   VaultMemoryItemDetail,
   VaultSearchHit,
@@ -27,6 +28,11 @@ import { VaultFileView } from "./VaultFileView";
 const INDEX_NOT_BUILT_TYPE = "urn:mensura:problem:vault-index-not-built";
 const MEMORY_NOT_FOUND_TYPE = "urn:mensura:problem:vault-memory-not-found";
 const SEARCH_LIMIT = 20;
+
+// Retrieval-mode strings Core reports honestly on `VaultSearchResponse.strategy` (see
+// shared-types `vault-index.ts`). We only read them here — never invent new ones.
+const SEMANTIC_STRATEGY_PREFIX = "semantic-cosine:";
+const LEXICAL_FALLBACK_STRATEGY = "lexical-fallback:reindex-required";
 
 type SelectedHit = {
   memoryItemId: string;
@@ -211,9 +217,15 @@ function AboutVault() {
           index. There is no incremental or file-watch indexing yet.
         </li>
         <li>
-          Search uses a <strong>local lexical vector model</strong> (hashed term frequencies), not a
-          neural embedding model. Results are approximate intent/keyword matches; exact substring
-          matches get a small boost.
+          Search ranks by vector similarity. With a local embedding backend it is{" "}
+          <strong>semantic</strong>; otherwise it falls back to a <strong>local lexical model</strong>{" "}
+          (hashed term frequencies) — the badge above shows the active mode. Either way, exact
+          substring matches get a small boost.
+        </li>
+        <li>
+          After the embedding backend changes, <strong>re-index</strong> the workspace to refresh its
+          vectors. Until then, search reports a lexical fallback — results still work, but relevance
+          may be lower.
         </li>
         <li>Very large or binary files are skipped by design and won&apos;t appear in results.</li>
       </ul>
@@ -374,6 +386,98 @@ function VaultIndexReady({
   );
 }
 
+type RetrievalTone = "semantic" | "lexical" | "fallback";
+
+type RetrievalMode = {
+  tone: RetrievalTone;
+  /** Short badge text. */
+  label: string;
+  /** Backend/model qualifier shown beside the badge, when known. */
+  detail: string | null;
+  /** Hover disclosure explaining the mode and any action it implies. */
+  title: string;
+};
+
+const RETRIEVAL_BADGE_CLASS: Record<RetrievalTone, string> = {
+  semantic: "badge badge--clean",
+  lexical: "badge",
+  fallback: "badge badge--dirty",
+};
+
+/**
+ * How the *stored* index was built, from the embedding metadata Core records on the snapshot
+ * summary. Absent metadata means a pre-embedding-backend (legacy lexical) index. This is the
+ * durable, always-visible mode; the live per-query mode comes from {@link describeSearchStrategy}.
+ */
+function describeIndexMode(embedding: VaultEmbeddingInfo | undefined): RetrievalMode {
+  if (!embedding) {
+    return {
+      tone: "lexical",
+      label: "Lexical search active",
+      detail: "legacy index — re-index for semantic",
+      title:
+        "This index has no embedding metadata — it was built by the local lexical model. Re-index with an embedding backend configured to enable semantic search.",
+    };
+  }
+  if (embedding.semantic) {
+    return {
+      tone: "semantic",
+      label: "Semantic search active",
+      detail: `${embedding.backend} / ${embedding.model}`,
+      title:
+        "Chunks were embedded by a local neural model, so search ranks by semantic similarity — local embeddings, no cloud. This reflects how the index was built; the mode used for each query is shown with the results.",
+    };
+  }
+  return {
+    tone: "lexical",
+    label: "Lexical search active",
+    detail: embedding.model,
+    title:
+      "Chunks were embedded by the local lexical model (hashed term frequencies). Results are keyword/intent matches; re-index with an embedding backend for semantic search.",
+  };
+}
+
+/**
+ * How the *last query* was actually ranked, from `VaultSearchResponse.strategy`. This carries the
+ * live signal the durable badge cannot: a `lexical-fallback:reindex-required` strategy means the
+ * index was built by a different backend than the one configured now, so a re-index is required.
+ */
+function describeSearchStrategy(strategy: string): RetrievalMode {
+  if (strategy.startsWith(SEMANTIC_STRATEGY_PREFIX)) {
+    const backendModel = strategy.slice(SEMANTIC_STRATEGY_PREFIX.length);
+    return {
+      tone: "semantic",
+      label: "Ranked by semantic similarity",
+      detail: backendModel || null,
+      title: "Results ranked by local neural embedding similarity.",
+    };
+  }
+  if (strategy === LEXICAL_FALLBACK_STRATEGY) {
+    return {
+      tone: "fallback",
+      label: "Lexical fallback — re-index for semantic search",
+      detail: null,
+      title:
+        "The index was built by a different embedding backend than the one configured now, so results fall back to lexical ranking over the stored text. Results still work, but relevance may be lower — re-index this workspace to restore semantic search.",
+    };
+  }
+  return {
+    tone: "lexical",
+    label: "Ranked by lexical similarity",
+    detail: null,
+    title: "Results ranked by the local lexical model (hashed term frequencies).",
+  };
+}
+
+function RetrievalModeBadge({ mode }: { mode: RetrievalMode }) {
+  return (
+    <span className="vault-retrieval-mode" title={mode.title}>
+      <span className={RETRIEVAL_BADGE_CLASS[mode.tone]}>{mode.label}</span>
+      {mode.detail ? <span className="vault-retrieval-mode__detail">{mode.detail}</span> : null}
+    </span>
+  );
+}
+
 function IndexStatus({ snapshot }: { snapshot: VaultIndexSnapshot }) {
   const summary = snapshot.summary;
   return (
@@ -385,6 +489,7 @@ function IndexStatus({ snapshot }: { snapshot: VaultIndexSnapshot }) {
           <time dateTime={snapshot.indexedAt}>{formatTimestamp(snapshot.indexedAt)}</time>
         </span>
       </div>
+      <RetrievalModeBadge mode={describeIndexMode(summary.embedding)} />
       <dl className="vault-index-counts">
         <Count label="Memory items" value={summary.memoryItemCount} />
         <Count label="Chunks" value={summary.chunkCount} />
@@ -432,10 +537,12 @@ function SearchResults({
 }) {
   return (
     <>
-      <p className="vault-index-results-meta">
-        Showing {response.returned} of {response.total} matches · strategy{" "}
-        <code>{response.strategy}</code>
-      </p>
+      <div className="vault-index-results-meta">
+        <span>
+          Showing {response.returned} of {response.total} matches
+        </span>
+        <RetrievalModeBadge mode={describeSearchStrategy(response.strategy)} />
+      </div>
       <ol className="vault-hit-list">
         {response.hits.map((hit, position) => (
           <li key={hit.chunkId}>

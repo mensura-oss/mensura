@@ -1351,6 +1351,19 @@ input:focus-visible {
   color: #cbd5e1;
 }
 
+.vault-retrieval-mode {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  cursor: help;
+}
+
+.vault-retrieval-mode__detail {
+  color: #94a3b8;
+  font: 0.62rem "SFMono-Regular", Consolas, monospace;
+}
+
 .vault-index-counts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
@@ -1438,12 +1451,12 @@ input:focus-visible {
 
 .vault-index-results-meta {
   margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
   color: #6f7e96;
   font-size: 0.62rem;
-}
-
-.vault-index-results-meta code {
-  color: #a5f3fc;
 }
 
 .vault-hit-list {
