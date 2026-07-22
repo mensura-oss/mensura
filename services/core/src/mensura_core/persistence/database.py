@@ -16,11 +16,19 @@ DEFAULT_DATABASE_URL = f"sqlite:///{DEFAULT_DB_PATH}"
 DEFAULT_BACKUP_DIR = os.path.expanduser("~/.mensura/backups")
 
 
+# Explicit 5s busy wait: with WAL mode SQLite still serializes writers, and the single
+# in-process job worker can briefly contend with a synchronous HTTP request on the same
+# connection pool. Setting busy_timeout at the SQLite level (rather than relying on the
+# pysqlite driver's default) makes the wait explicit and driver-independent.
+SQLITE_BUSY_TIMEOUT_MS = 5000
+
+
 def _configure_sqlite_pragmas(dbapi_connection, connection_record):  # type: ignore[no-untyped-def]
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys = ON")
     cursor.execute("PRAGMA journal_mode = WAL")
     cursor.execute("PRAGMA synchronous = NORMAL")
+    cursor.execute(f"PRAGMA busy_timeout = {SQLITE_BUSY_TIMEOUT_MS}")
     cursor.close()
 
 

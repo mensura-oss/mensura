@@ -11,6 +11,7 @@ import { RepositorySummaryPanel } from "../features/repository/RepositorySummary
 import { ProviderSettingsPanel } from "../features/providers/ProviderSettingsPanel";
 import { TaskInspector } from "../features/tasks/TaskInspector";
 import { TaskCreationPanel } from "../features/tasks/TaskCreationPanel";
+import { VaultIndexPanel } from "../features/vault/VaultIndexPanel";
 import { VaultPanel } from "../features/vault/VaultPanel";
 import { WorkspacesPanel } from "../features/workspaces/WorkspacesPanel";
 import { AppShell } from "../layout/AppShell";
@@ -49,6 +50,12 @@ export function App() {
         </div>
         <div className="dashboard-grid__vault">
           <VaultPanel
+            key={activeWorkspaceId ?? "no-workspace"}
+            activeWorkspaceId={activeWorkspaceId}
+          />
+        </div>
+        <div className="dashboard-grid__vault-index">
+          <VaultIndexPanel
             key={activeWorkspaceId ?? "no-workspace"}
             activeWorkspaceId={activeWorkspaceId}
           />

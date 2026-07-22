@@ -52,6 +52,16 @@ from mensura_core.undo_models import (
     UndoFileOutcome,
     UndoGuardResult,
 )
+from mensura_core.vault_index_models import (
+    VaultIndexSnapshot,
+    VaultIndexSummary,
+    VaultSourceType,
+)
+from mensura_core.vault_index_repositories import (
+    IndexedChunk,
+    IndexedMemoryItem,
+    VaultIndexRecord,
+)
 from mensura_core.vault_models import (
     VaultFileInventoryItem,
     VaultInventorySnapshot,
@@ -95,6 +105,7 @@ _guard_summary_adapter = TypeAdapter(GuardSummary)
 _vault_inventory_snapshot_adapter = TypeAdapter(VaultInventorySnapshot)
 _vault_inventory_summary_adapter = TypeAdapter(VaultInventorySummary)
 _vault_file_item_adapter = TypeAdapter(VaultFileInventoryItem)
+_vault_index_summary_adapter = TypeAdapter(VaultIndexSummary)
 _context_pack_limits_adapter = TypeAdapter(ContextPackLimits)
 _context_pack_summary_adapter = TypeAdapter(ContextPackFileSummary)
 _context_pack_manifest_adapter = TypeAdapter(ContextPackManifest)
@@ -130,6 +141,9 @@ class WorkspaceRow(Base):
     )
     vault_snapshots = relationship(
         "VaultInventorySnapshotRow", back_populates="workspace", cascade="all, delete-orphan"
+    )
+    vault_indexes = relationship(
+        "VaultIndexSnapshotRow", back_populates="workspace", cascade="all, delete-orphan"
     )
     context_packs = relationship(
         "ContextPackRow", back_populates="workspace", cascade="all, delete-orphan"
@@ -380,6 +394,158 @@ class VaultInventoryItemRow(Base):
             language=self.language,
             kind=self.kind,
             size_bytes=self.size_bytes,
+        )
+
+
+class VaultIndexSnapshotRow(Base):
+    __tablename__ = "vault_index_snapshots"
+
+    id = Column(Uuid, primary_key=True)
+    workspace_id = Column(
+        Uuid, ForeignKey("workspaces.id"), nullable=False, unique=True, index=True
+    )
+    status = Column(String(20), nullable=False)
+    indexed_at = Column(DateTime(timezone=True), nullable=False)
+    _summary = Column("summary", JSON, nullable=False)
+    memory_item_count = Column(Integer, nullable=False)
+    chunk_count = Column(Integer, nullable=False)
+
+    workspace = relationship("WorkspaceRow", back_populates="vault_indexes")
+    items = relationship(
+        "VaultMemoryItemRow", back_populates="snapshot", cascade="all, delete-orphan"
+    )
+
+    def to_snapshot(self) -> VaultIndexSnapshot:
+        return VaultIndexSnapshot(
+            id=self.id,
+            workspace_id=self.workspace_id,
+            status=self.status,
+            indexed_at=_ensure_tz(self.indexed_at),
+            summary=_vault_index_summary_adapter.validate_python(self._summary),
+        )
+
+    @classmethod
+    def from_record(
+        cls, record: VaultIndexRecord
+    ) -> tuple["VaultIndexSnapshotRow", list["VaultMemoryItemRow"], list["VaultChunkRow"]]:
+        snapshot = cls(
+            id=record.snapshot.id,
+            workspace_id=record.snapshot.workspace_id,
+            status=record.snapshot.status,
+            indexed_at=record.snapshot.indexed_at,
+            _summary=record.snapshot.summary.model_dump(by_alias=False, mode="json"),
+            memory_item_count=len(record.items),
+            chunk_count=sum(len(item.chunks) for item in record.items),
+        )
+        item_rows: list[VaultMemoryItemRow] = []
+        chunk_rows: list[VaultChunkRow] = []
+        for item in record.items:
+            item_rows.append(
+                VaultMemoryItemRow(
+                    id=item.id,
+                    index_id=item.index_id,
+                    workspace_id=item.workspace_id,
+                    path=item.path,
+                    source_type=item.source_type.value,
+                    language=item.language,
+                    digest=item.digest,
+                    size_bytes=item.size_bytes,
+                    chunk_count=len(item.chunks),
+                    indexed_at=item.indexed_at,
+                )
+            )
+            for chunk in item.chunks:
+                chunk_rows.append(
+                    VaultChunkRow(
+                        id=chunk.id,
+                        memory_item_id=item.id,
+                        workspace_id=item.workspace_id,
+                        chunk_index=chunk.chunk_index,
+                        start_line=chunk.start_line,
+                        end_line=chunk.end_line,
+                        char_count=chunk.char_count,
+                        digest=chunk.digest,
+                        text=chunk.text,
+                        _embedding=chunk.embedding,
+                        path=item.path,
+                        source_type=item.source_type.value,
+                        language=item.language,
+                    )
+                )
+        return snapshot, item_rows, chunk_rows
+
+
+class VaultMemoryItemRow(Base):
+    __tablename__ = "vault_memory_items"
+
+    id = Column(Uuid, primary_key=True)
+    index_id = Column(
+        Uuid, ForeignKey("vault_index_snapshots.id"), nullable=False, index=True
+    )
+    workspace_id = Column(Uuid, nullable=False, index=True)
+    path = Column(String(4096), nullable=False)
+    source_type = Column(String(10), nullable=False)
+    language = Column(String(80), nullable=True)
+    digest = Column(String(71), nullable=False)
+    size_bytes = Column(Integer, nullable=False)
+    chunk_count = Column(Integer, nullable=False)
+    indexed_at = Column(DateTime(timezone=True), nullable=False)
+
+    snapshot = relationship("VaultIndexSnapshotRow", back_populates="items")
+    chunks = relationship(
+        "VaultChunkRow",
+        back_populates="item",
+        cascade="all, delete-orphan",
+        order_by="VaultChunkRow.chunk_index",
+    )
+
+    def to_domain(self) -> IndexedMemoryItem:
+        return IndexedMemoryItem(
+            id=self.id,
+            workspace_id=self.workspace_id,
+            index_id=self.index_id,
+            path=self.path,
+            source_type=VaultSourceType(self.source_type),
+            language=self.language,
+            digest=self.digest,
+            size_bytes=self.size_bytes,
+            indexed_at=_ensure_tz(self.indexed_at),
+            chunks=tuple(chunk.to_domain() for chunk in self.chunks),
+        )
+
+
+class VaultChunkRow(Base):
+    __tablename__ = "vault_chunks"
+
+    id = Column(Uuid, primary_key=True)
+    memory_item_id = Column(
+        Uuid, ForeignKey("vault_memory_items.id"), nullable=False, index=True
+    )
+    workspace_id = Column(Uuid, nullable=False, index=True)
+    chunk_index = Column(Integer, nullable=False)
+    start_line = Column(Integer, nullable=False)
+    end_line = Column(Integer, nullable=False)
+    char_count = Column(Integer, nullable=False)
+    digest = Column(String(71), nullable=False)
+    text = Column(Text, nullable=False)
+    _embedding = Column("embedding", JSON, nullable=False)
+    path = Column(String(4096), nullable=False)
+    source_type = Column(String(10), nullable=False)
+    language = Column(String(80), nullable=True)
+
+    item = relationship("VaultMemoryItemRow", back_populates="chunks")
+
+    def to_domain(self) -> IndexedChunk:
+        return IndexedChunk(
+            id=self.id,
+            memory_item_id=self.memory_item_id,
+            chunk_index=self.chunk_index,
+            start_line=self.start_line,
+            end_line=self.end_line,
+            char_count=self.char_count,
+            digest=self.digest,
+            text=self.text,
+            embedding=self._embedding,
         )
 
 

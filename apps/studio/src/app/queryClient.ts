@@ -50,8 +50,12 @@ export const queryKeys = {
     ["core", "workspaces", workspaceId, "vault", "files", "content", path] as const,
   vaultFiles: (workspaceId: string) =>
     ["core", "workspaces", workspaceId, "vault", "files"] as const,
+  vaultIndex: (workspaceId: string) =>
+    ["core", "workspaces", workspaceId, "vault", "index"] as const,
   vaultInventory: (workspaceId: string) =>
     ["core", "workspaces", workspaceId, "vault", "inventory"] as const,
+  vaultMemoryItem: (memoryItemId: string) =>
+    ["core", "vault", "memory", memoryItemId] as const,
   verification: (verificationId: string) =>
     ["core", "verifications", verificationId] as const,
   undo: (undoId: string) => ["core", "undos", undoId] as const,

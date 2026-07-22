@@ -21,6 +21,15 @@ class SqlBackupRepository:
             row = session.get(BackupRow, backup_id)
             return row.to_domain() if row is not None else None
 
+    def delete(self, backup_id: UUID) -> bool:
+        with self._sf() as session:
+            row = session.get(BackupRow, backup_id)
+            if row is None:
+                return False
+            session.delete(row)
+            session.commit()
+            return True
+
     def list_all(self) -> Sequence[BackupArtifact]:
         with self._sf() as session:
             rows = (

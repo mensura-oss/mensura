@@ -14,4 +14,5 @@ export * from "./repository.js";
 export * from "./state-machine.js";
 export * from "./undo.js";
 export * from "./vault.js";
+export * from "./vault-index.js";
 export * from "./verification.js";

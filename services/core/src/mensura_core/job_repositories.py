@@ -52,6 +52,10 @@ class JobRepository(Protocol):
         missing, not failed, or already exhausted."""
         ...
 
+    def delete(self, job_id: UUID) -> bool:
+        """Remove one job row (retention pruning). Returns True if a row was deleted."""
+        ...
+
 
 class InMemoryJobRepository:
     def __init__(self) -> None:
@@ -166,3 +170,7 @@ class InMemoryJobRepository:
             )
             self._jobs[exhausted.id] = exhausted
             return retry_job
+
+    def delete(self, job_id: UUID) -> bool:
+        with self._lock:
+            return self._jobs.pop(job_id, None) is not None

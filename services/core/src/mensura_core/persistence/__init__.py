@@ -7,6 +7,7 @@ from mensura_core.persistence.repositories.guard import SqlGuardRunRepository
 from mensura_core.persistence.repositories.job import SqlJobRepository
 from mensura_core.persistence.repositories.undo import SqlUndoRepository
 from mensura_core.persistence.repositories.vault import SqlVaultInventoryRepository
+from mensura_core.persistence.repositories.vault_index import SqlVaultIndexRepository
 from mensura_core.persistence.repositories.verification import SqlProposalVerificationRepository
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "SqlJobRepository",
     "SqlProposalVerificationRepository",
     "SqlUndoRepository",
+    "SqlVaultIndexRepository",
     "SqlVaultInventoryRepository",
 ]

@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable
 from datetime import datetime
 from uuid import UUID, uuid4
@@ -25,12 +26,17 @@ from mensura_core.job_models import (
 )
 from mensura_core.job_repositories import JobRepository
 from mensura_core.models import ensure_utc_timestamp
+from mensura_core.retention import RetentionPolicy, RetentionResult
 from mensura_core.service import utc_now
+
+logger = logging.getLogger(__name__)
 
 IdFactory = Callable[[], UUID]
 Clock = Callable[[], datetime]
 
 EnqueueRequest = EnqueueVerificationJob | EnqueueApplyJob | EnqueueUndoJob | EnqueueBackupJob
+
+_TERMINAL_STATUSES = frozenset({JobStatus.SUCCEEDED, JobStatus.FAILED})
 
 
 def make_job_event(job: Job) -> MensuraEvent:
@@ -67,6 +73,7 @@ class JobService:
         id_factory: IdFactory = uuid4,
         clock: Clock = utc_now,
         event_publisher: EventPublisher | None = None,
+        retention_policy: RetentionPolicy | None = None,
     ) -> None:
         self._repo = job_repository
         self._proposal_repository = proposal_repository
@@ -74,6 +81,7 @@ class JobService:
         self._id_factory = id_factory
         self._clock = clock
         self._event_publisher = event_publisher
+        self._retention = retention_policy
 
     def enqueue(self, request: EnqueueRequest) -> Job:
         if isinstance(request, EnqueueVerificationJob):
@@ -136,6 +144,53 @@ class JobService:
             self._repo.list_all(workspace_id=workspace_id, status=status, job_type=job_type)
         )
         return JobCollection(items=items, total=len(items))
+
+    def prune_jobs(self) -> RetentionResult:
+        """Delete terminal (succeeded/failed) jobs beyond the retention policy.
+
+        Only terminal jobs are ever pruned — queued and running jobs are operationally
+        live and left untouched. A terminal job that is still referenced by a retained job
+        as its retry parent or root is also kept, so pruning never orphans a retry lineage.
+        Best-effort: a single failed deletion is warned and skipped, never raised.
+        """
+        if self._retention is None or not self._retention.enabled:
+            return RetentionResult()
+        all_jobs = tuple(self._repo.list_all())
+        referenced = {
+            reference
+            for job in all_jobs
+            for reference in (job.retry_of_job_id, job.root_job_id)
+            if reference is not None
+        }
+        terminal = [job for job in all_jobs if job.status in _TERMINAL_STATUSES]
+        kept, prunable = self._retention.partition(
+            terminal, now=utc_now(), timestamp=lambda job: job.created_at
+        )
+        deleted = failed = kept_for_lineage = 0
+        for job in prunable:
+            if job.id in referenced:
+                kept_for_lineage += 1
+                continue
+            try:
+                self._repo.delete(job.id)
+            except Exception:
+                logger.warning("Retention: could not delete job %s.", job.id, exc_info=True)
+                failed += 1
+                continue
+            logger.info(
+                "Retention: pruned job %s (type=%s, workspace=%s, createdAt=%s).",
+                job.id,
+                job.job_type.value,
+                job.workspace_id,
+                job.created_at.isoformat(),
+            )
+            deleted += 1
+        return RetentionResult(
+            inspected=len(terminal),
+            deleted=deleted,
+            kept=len(kept) + kept_for_lineage,
+            failed=failed,
+        )
 
     def retry(self, job_id: UUID) -> Job:
         original = self._repo.get(job_id)

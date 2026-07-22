@@ -13,6 +13,10 @@ class BackupRepository(Protocol):
 
     def list_all(self) -> Sequence[BackupArtifact]: ...
 
+    def delete(self, backup_id: UUID) -> bool:
+        """Remove one backup's metadata row. Returns True if a row was deleted."""
+        ...
+
 
 class InMemoryBackupRepository:
     def __init__(self) -> None:
@@ -26,6 +30,10 @@ class InMemoryBackupRepository:
     def get(self, backup_id: UUID) -> BackupArtifact | None:
         with self._lock:
             return self._backups.get(backup_id)
+
+    def delete(self, backup_id: UUID) -> bool:
+        with self._lock:
+            return self._backups.pop(backup_id, None) is not None
 
     def list_all(self) -> Sequence[BackupArtifact]:
         with self._lock:

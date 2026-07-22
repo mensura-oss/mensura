@@ -163,3 +163,12 @@ class SqlJobRepository:
             )
             session.commit()
             return retry_job
+
+    def delete(self, job_id: UUID) -> bool:
+        with self._sf() as session:
+            row = session.get(JobRow, job_id)
+            if row is None:
+                return False
+            session.delete(row)
+            session.commit()
+            return True

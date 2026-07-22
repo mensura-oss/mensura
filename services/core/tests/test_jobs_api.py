@@ -236,6 +236,35 @@ def test_apply_job_fails_on_live_drift_without_writing(tmp_path: Path) -> None:
         assert apps["total"] == 0
 
 
+def test_apply_job_fails_honestly_when_the_workspace_reservation_is_held(tmp_path: Path) -> None:
+    """A worker apply refused by the write reservation becomes a failed job, no artifact."""
+    with _git_client(tmp_path) as client:
+        ready = approve_verified_proposal(client, tmp_path)
+        proposal, verification = ready["proposal"], ready["verification"]
+        client.post(
+            "/api/v1/jobs",
+            json={
+                "jobType": "application_apply",
+                "proposalId": proposal["id"],
+                "verificationId": verification["id"],
+            },
+        )
+
+        # Hold the workspace as though another live-tree writer were active, then let the
+        # worker claim and execute the apply job against the held reservation.
+        reservation = client.app.state.workspace_write_reservation
+        with reservation.reserve(UUID(proposal["workspaceId"]), holder_kind="application_undo"):
+            finished = client.app.state.job_worker.process_next_job()
+
+        assert finished is not None
+        assert finished.status.value == "failed"
+        assert finished.result_entity_id is None
+        assert "in progress" in finished.last_error.lower()
+        # No partial artifact chain was created by the refusal.
+        apps = client.get(f"/api/v1/workspaces/{proposal['workspaceId']}/applications").json()
+        assert apps["total"] == 0
+
+
 def test_backup_job_runs_end_to_end_with_sql(tmp_path: Path) -> None:
     fd, db_path = tempfile.mkstemp(suffix=".db", prefix="mensura_jobs_backup_")
     os.close(fd)

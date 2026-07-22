@@ -1,6 +1,6 @@
 # Mensura Core
 
-Mensura Core is the HTTP boundary for tasks and controlled agent execution. The current service implements versioned resource contracts, durable SQLite-backed persistence, read-only local Git inspection, deterministic Vault inventory/retrieval, immutable context-pack assembly, a manual Ruff/pytest Guard runner, the credential-free deterministic provider, one optional OpenAI BYOK adapter with bounded structured results, separately persisted write-isolated change-proposal review, isolated sandbox verification of approved proposals in temporary Git worktrees, an explicit digest-checked apply-to-live step, bounded digest-guarded undo execution, safe local backup and restore, a durable SQLite-backed background job queue with an in-process worker, and live Server-Sent Event (SSE) status updates. It never commits, stages, pushes, or checks out.
+Mensura Core is the HTTP boundary for tasks and controlled agent execution. The current service implements versioned resource contracts, durable SQLite-backed persistence, read-only local Git inspection, deterministic Vault inventory/retrieval plus a durable Vault index with lexical-vector semantic search and heuristic architecture summaries, immutable context-pack assembly, a manual Ruff/pytest Guard runner, the credential-free deterministic provider, one optional OpenAI BYOK adapter with bounded structured results, separately persisted write-isolated change-proposal review, isolated sandbox verification of approved proposals in temporary Git worktrees, an explicit digest-checked apply-to-live step, bounded digest-guarded undo execution serialized with apply through a unified per-workspace write reservation, safe local backup and restore, a durable SQLite-backed background job queue with an in-process worker, live Server-Sent Event (SSE) status updates, and a once-per-process startup maintenance pass that sweeps orphaned verification sandboxes and prunes backups and terminal jobs under a conservative retention policy. It never commits, stages, pushes, or checks out.
 
 ## Requirements
 
@@ -51,6 +51,11 @@ JSON property names use camelCase. Resource identifiers are UUIDs and timestamps
 | `GET` | `/api/v1/workspaces/{workspace_id}/vault/inventory` | Returns the latest inventory summary |
 | `GET` | `/api/v1/workspaces/{workspace_id}/vault/files` | Returns sorted file metadata with optional filters |
 | `GET` | `/api/v1/workspaces/{workspace_id}/vault/files/content?path=...` | Returns one bounded UTF-8 preview |
+| `POST` | `/api/v1/vault/index` | Indexes a workspace into memory items + chunks and returns `201` |
+| `GET` | `/api/v1/vault/indexes/{workspace_id}` | Returns the latest Vault index status and summary |
+| `POST` | `/api/v1/vault/search` | Returns relevance-ranked chunk hits for a query |
+| `GET` | `/api/v1/vault/memory/{memory_id}` | Returns one memory item and its chunks |
+| `POST` | `/api/v1/vault/summarize` | Returns a heuristic architecture summary from indexed material |
 | `POST` | `/api/v1/workspaces/{workspace_id}/context-packs` | Creates or reopens a deterministic immutable pack and returns `201` |
 | `GET` | `/api/v1/workspaces/{workspace_id}/context-packs` | Lists immutable pack summaries |
 | `GET` | `/api/v1/workspaces/{workspace_id}/context-packs/{context_pack_id}` | Returns the exact immutable manifest |
@@ -131,6 +136,12 @@ Application is digest-checked and all-or-nothing. Phase one resolves every safe 
 
 Each application is a separate immutable `ApplicationArtifact` schema-v1 record referencing proposal, verification, run, task, workspace, and context lineage, with a closed status of `applied_guard_passed`, `applied_guard_failed`, `applied_guard_unavailable` (written, but Guard could not execute—recorded, never hidden), or `application_failed` (a rare partial write recorded per file). It carries `live_working_tree` target metadata (live HEAD, verification commit, HEAD-moved flag), a compact bounded Guard result, per-file applied results (expected/live-before/after/applied digests plus a closed `applied | write_failed | not_attempted` reason), a summary, and undo metadata (per-file prior existence/digest/bounded prior text with a truncation flag and applied digest). Undo metadata is consumed by the separate digest-guarded undo flow (documented below). An artifact exists only when the live tree was written.
 
+## Workspace write coordination
+
+Apply and undo are the only operations that write a workspace's live working tree. A single process-wide reservation (`WorkspaceWriteReservation`, exposed on `app.state.workspace_write_reservation`) guarantees that at most one live-tree writer per workspace runs at a time — whether it originates from a synchronous HTTP request or the background job worker (which invokes the same service methods, so it cannot bypass the reservation). The claim is keyed by `workspaceId`, made atomically within the process, released in a `finally` block, and never queued: a second writer for a reserved workspace is refused immediately with `urn:mensura:problem:workspace-write-in-progress` (`409`) and nothing is written. Under a background job this refusal maps to an honest `failed` job carrying a bounded `lastError`, with no partial artifact created. Diagnostics on each holder record the holder kind (`application_apply` / `application_undo`), the target entity, and `acquiredAt`.
+
+Verification, backup, and standalone Guard deliberately do **not** take this reservation. Verification materializes its sandbox from the committed `HEAD` and writes only inside a temporary worktree, so concurrent live-tree writes (which never commit, move `HEAD`, or touch `.git`) cannot affect it; it keeps its own per-workspace verification serialization. Backup snapshots the SQLite database, not the workspace tree. Standalone Guard reads the live tree and keeps its own guard-run reservation. The internal Guard sub-run inside apply/undo already executes under the held write reservation, so post-write Guard sees a stable tree.
+
 ## Local BYOK configuration
 
 `PUT /api/v1/providers/openai/config` accepts `{ "apiKey": "...", "model": "..." }`. The key is write-only: Core stores it through Python `keyring` under service `dev.mensura.studio`, account `openai-api-key`, and no GET or response schema contains it. The model is the only provider value written to `providers.json` in the platform user-config directory (`~/Library/Application Support/Mensura` on macOS), with `MENSURA_CONFIG_DIR` available for an explicit local override. This settings file is mode `0600` where supported and contains no secret.
@@ -158,7 +169,23 @@ Remaining files are classified conservatively from known binary suffixes plus an
 
 `GET .../vault/files` accepts optional `query` (case-insensitive path/name substring), `extension` (case-insensitive exact extension, with or without its leading dot), and `limit` (1–500, default 200). `total` is the filtered total before the limit and `returned` is the response item count.
 
-Preview accepts only a canonical relative path already present in the latest inventory. Core rejects absolute/backslash/parent/dot-normalized paths, revalidates every component against symlinks and root containment, and rechecks current file/size/binary state. Only strict UTF-8 text is returned, capped at 16 KiB with `previewBytes`, `totalBytes`, and `truncated`. No endpoint writes repository files. Fixed filtering does not interpret `.gitignore`, prove that content is secret-free, or provide embeddings, chunks, syntax trees, semantic scores, graph relations, watchers, or durable history.
+Preview accepts only a canonical relative path already present in the latest inventory. Core rejects absolute/backslash/parent/dot-normalized paths, revalidates every component against symlinks and root containment, and rechecks current file/size/binary state. Only strict UTF-8 text is returned, capped at 16 KiB with `previewBytes`, `totalBytes`, and `truncated`. No endpoint writes repository files. Fixed filtering does not interpret `.gitignore` or prove that content is secret-free. Embeddings, chunks, and semantic scores are provided by the separate Vault index below; syntax trees, graph relations, watchers, and per-file durable history are not.
+
+## Vault index, semantic retrieval, and architecture summary
+
+The Vault index is an additive layer over the read-only inventory that makes a workspace's code and docs searchable and summarizable. It is manual and synchronous: `POST /api/v1/vault/index` walks the workspace, chunks and embeds supported files, and replaces the latest index for that workspace (one index per workspace; re-indexing cascade-deletes the prior memory items and chunks). Indexing writes only Core's SQLite database — never the repository.
+
+**Ingestion and exclusions.** The walk reuses the inventory's safety posture and exclusion rules (never follows symlinks or leaves the workspace root; prunes `.git`, `node_modules`, `.venv`, `dist`, `build`, and the rest of the inventory list; excludes secrets/keys, compiled/archive artifacts, and files over the inventory's 5 MiB cap). Among the remaining files it indexes three source types: **code** (Python, TypeScript/JavaScript, Rust, Go, C/C++, Java, Kotlin, Swift, Shell, SQL, CSS/SCSS, HTML, XML, Dockerfile, Makefile), **doc** (`.md`/`.markdown`/`.mdx`/`.rst`/`.txt`/`.adoc`), and **config** (`.json`/`.yaml`/`.yml`/`.toml`/`.ini`/`.cfg`/`.conf`/`.properties`). A file that is unreadable, binary (NUL byte / invalid UTF-8), larger than the explicit 1 MB indexing cap, of an unsupported type, or empty is skipped with a recorded reason (`read_error`, `binary`, `too_large`, `unsupported_type`, `empty`); the index summary carries counts by reason plus a bounded sample.
+
+**Chunking.** Docs are split on markdown headings and blank-line paragraph boundaries; code and config are split into bounded fixed line windows (≤80 lines and ≤~1500 chars). Every chunk retains its 1-based inclusive `startLine`/`endLine`, `charCount`, and a SHA-256 `digest`, and traces back to its memory item (`path`, `sourceType`, `language`, content `digest`, `sizeBytes`).
+
+**Retrieval strategy (honest).** Retrieval is a **local, dependency-free lexical vector model**, not neural embeddings. Each chunk and each query is tokenized, its unigrams and bigrams hashed with `blake2b` into a fixed 512-bucket term-frequency vector, and L2-normalized; `POST /api/v1/vault/search` ranks chunks by cosine similarity with a small exact-substring boost, optionally filtered by `sourceType` (`limit` 1–50, default 10). `blake2b` (not Python's per-process-salted `hash()`) keeps persisted vectors stable across restarts, so search is reproducible from the index alone. The embedder sits behind a pluggable `Embedder` protocol; a real embedding model can replace it without a schema or API change. `GET /api/v1/vault/memory/{memory_id}` returns one memory item and its chunk texts.
+
+**Architecture summary.** `POST /api/v1/vault/summarize` derives a concise, deterministic, non-AI summary from the indexed material: file/code/doc/config counts and total bytes, top languages, top-level directory "modules" (file count, bytes, dominant language), technologies detected from marker files (`package.json`→Node.js, `pyproject.toml`/`requirements.txt`→Python, `Cargo.toml`→Rust, `go.mod`→Go, `Dockerfile`→Docker, `tsconfig.json`→TypeScript, `alembic.ini`→Alembic, …), and heuristic entry points (`main.py`, `index.ts`, `main.rs`, …). It is a first orientation, not a guaranteed-complete or AI-generated design document.
+
+These endpoints now have a user-facing **Studio "Vault memory" panel** (index trigger, indexed/not-indexed status and summary counts, ranked search with a `sourceType` filter, a chunk-detail pane reached from a search hit, and an on-demand architecture summary), which states the lexical-vector and manual-full-replace limits in the UI.
+
+Deferred: full graph memory and linked task memory, branch-aware or cross-workspace shared memory, real neural/semantic embeddings, incremental/watched re-indexing, and in-editor navigation to a file/line from a search hit (Studio currently opens the indexed chunk with its line range).
 
 ## Immutable context packs
 
@@ -235,7 +262,9 @@ Vault additionally uses:
 - `urn:mensura:problem:vault-path-invalid` (`422`);
 - `urn:mensura:problem:vault-file-excluded` (`403`);
 - `urn:mensura:problem:vault-binary-preview-refused` (`415`);
-- `urn:mensura:problem:vault-file-not-found` (`404`).
+- `urn:mensura:problem:vault-file-not-found` (`404`);
+- `urn:mensura:problem:vault-index-not-built` (`404`);
+- `urn:mensura:problem:vault-memory-not-found` (`404`).
 
 Context packs additionally use:
 
@@ -284,7 +313,7 @@ Apply-to-live additionally uses:
 - `urn:mensura:problem:application-empty-proposal` (`422`) when the proposal has no file changes;
 - `urn:mensura:problem:application-verification-not-found` (`404`), `-verification-mismatch` (`409`), and `-verification-not-passed` (`409`);
 - `urn:mensura:problem:application-already-exists` (`409`) for a single-apply re-attempt;
-- `urn:mensura:problem:application-in-progress` (`409`) for a concurrent application in the same workspace;
+- `urn:mensura:problem:workspace-write-in-progress` (`409`) when another live-tree writer (apply or undo) already holds the workspace's write reservation;
 - `urn:mensura:problem:application-live-drift` (`409`) when a live file no longer matches the verified basis;
 - `urn:mensura:problem:application-unsafe-path` (`422`) when a proposed path escapes the workspace root;
 - `urn:mensura:problem:application-write-failed` (`500`) when staging fails before any live file changed;
@@ -339,6 +368,39 @@ The stream emits an initial `connected` event with the buffer size. Clients can 
 
 Pass `?workspaceId=` to receive only events scoped to that workspace. Without the filter, all events are streamed.
 
+## Startup maintenance: sandbox cleanup and retention
+
+The durable app (`create_sql_app`) runs a once-per-process maintenance pass inside its startup lifespan, **before the job worker starts and before it accepts traffic**. Every step is best-effort: a failure is logged as a warning and never aborts startup. The ephemeral in-memory `:app` target does not run maintenance.
+
+### Verification sandbox sweep
+
+Proposal verification runs inside a temporary Git worktree named `mensura-verification-*` (created under the system temp directory, or `MENSURA_SANDBOX_DIR` when set) that holds exactly one `worktree` child. A crash or hard termination mid-verification can leave the temp directory and its stale `.git/worktrees` metadata behind. Because Core is single-process, no verification can be in flight during the startup sweep, so any directory that still matches the Mensura naming scheme is necessarily orphaned by a previous process.
+
+The sweep is deliberately conservative:
+
+- **When it runs:** once, in the startup lifespan, before the worker and before traffic.
+- **What it deletes:** only directories whose name starts with `mensura-verification-` **and** whose layout matches what the factory creates (empty, or containing exactly one `worktree` child); then, for each configured workspace, it runs Git's own `git worktree prune` to drop stale worktree metadata (directories are removed first so the prune sees the missing working tree).
+- **What it never deletes:** anything not matching that prefix and structure, symlinks, or a prefixed directory with unexpected contents (those are logged and skipped). It never touches the live repository, and it never edits `.git` internals by hand.
+- It logs a summary: sandboxes inspected, removed, skipped, and workspaces whose worktree metadata was pruned.
+
+### Retention (backups and terminal jobs)
+
+Retention is **best-effort local hygiene** to bound the two operational byproducts that otherwise grow without limit over long-term single-user use — database **backups** and **terminal jobs** (succeeded/failed). It is not a replacement for an external backup strategy.
+
+A single policy governs both: an item is **kept** if it is within the newest `keep_at_least`, **or** within the newest `count`, **or** newer than `days`; it is **pruned** only when it fails all three (beyond the count *and* older than the age). A dimension set to `0` is inactive, and **both `0` disables pruning** for that item type.
+
+| Item | Count var (default) | Days var (default) | Never-pruned floor |
+|---|---|---|---|
+| Backups | `MENSURA_BACKUP_RETENTION_COUNT` (10) | `MENSURA_BACKUP_RETENTION_DAYS` (30) | the newest backup is always kept (`keep_at_least=1`) |
+| Terminal jobs | `MENSURA_JOB_RETENTION_COUNT` (200) | `MENSURA_JOB_RETENTION_DAYS` (30) | queued/running jobs are never candidates |
+
+- **What is pruned:** completed/failed backups beyond the policy (both the metadata row and the on-disk file — the file is unlinked *before* the row, and a file-unlink failure skips the row deletion so a surviving row always still refers to its file); and terminal jobs beyond the policy. A terminal job still referenced by another job as its retry parent or root is kept, so pruning never orphans a retry lineage.
+- **What is never pruned:** core domain artifacts (tasks, runs, proposals, verifications, applications, undos) and queued/running jobs. Retention only touches backups and terminal jobs.
+- **Safety:** the user's only backup is never deleted; a value below `1` for the backup count is treated as `1`; a single failed deletion is logged and skipped, never raised.
+- **When it runs:** backup retention runs after every successful backup creation (bounding the backup directory as it grows) and again at startup; terminal-job retention runs at startup. There is no scheduler or cron.
+
 ## Storage boundary
 
-Resource routers depend on `CoreService`; provider routes use `ProviderRegistry`; Guard, Vault, context-pack, change-proposal, verification, application, undo, backup, and event routes retain dedicated services. Services use replaceable storage/config/credential/runner/Git/filesystem/provider/sandbox protocols. Workspaces/tasks/runs, Guard results, Vault inventories, context packs, change proposals, verification artifacts, application artifacts, undo artifacts, backups, and background jobs are persisted in SQLite via SQLAlchemy 2.0 + Alembic migrations. Only the non-secret OpenAI model setting and keyring credential follow separate storage paths. Git/filesystem adapters provide read-only live inspection; provider adapters consume only persisted task/context objects; proposal materialization consumes only the persisted successful run plus its exact stored manifest. Isolated verification writes exclusively inside its temporary worktree before removing it. Explicit apply-to-live and undo write the live working tree, and both do so with digest checks and atomic replaces after every precondition passes—still without any Git command. External filesystem changes can make inventory/context capture best-effort, but executing a run or creating/reviewing/verifying its proposal does not write the repository.
+Resource routers depend on `CoreService`; provider routes use `ProviderRegistry`; Guard, Vault, context-pack, change-proposal, verification, application, undo, backup, and event routes retain dedicated services. Services use replaceable storage/config/credential/runner/Git/filesystem/provider/sandbox protocols. Workspaces/tasks/runs, Guard results, Vault inventories, Vault indexes (memory items and embedded chunks), context packs, change proposals, verification artifacts, application artifacts, undo artifacts, backups, and background jobs are persisted in SQLite via SQLAlchemy 2.0 + Alembic migrations. Only the non-secret OpenAI model setting and keyring credential follow separate storage paths. Git/filesystem adapters provide read-only live inspection; provider adapters consume only persisted task/context objects; proposal materialization consumes only the persisted successful run plus its exact stored manifest. Isolated verification writes exclusively inside its temporary worktree before removing it. Explicit apply-to-live and undo write the live working tree, and both do so with digest checks and atomic replaces after every precondition passes—still without any Git command—while holding the shared per-workspace write reservation so two live-tree writers can never interleave on the same workspace. External filesystem changes can make inventory/context capture best-effort, but executing a run or creating/reviewing/verifying its proposal does not write the repository.
+
+The durable SQLite path sets `PRAGMA busy_timeout = 5000` alongside `journal_mode = WAL` and `foreign_keys = ON` on every connection, so a brief writer overlap between the single in-process worker and a synchronous request waits up to five seconds rather than failing immediately with `SQLITE_BUSY`. The value is driver-independent and defined in `persistence/database.py`.

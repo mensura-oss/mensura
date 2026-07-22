@@ -51,6 +51,7 @@ from mensura_core.persistence import (
     SqlJobRepository,
     SqlProposalVerificationRepository,
     SqlUndoRepository,
+    SqlVaultIndexRepository,
     SqlVaultInventoryRepository,
 )
 from mensura_core.persistence.database import (
@@ -72,12 +73,19 @@ from mensura_core.provider_config import (
 )
 from mensura_core.provider_registry import ProviderRegistry, TransportFactory
 from mensura_core.repositories import CoreRepository, InMemoryCoreRepository
+from mensura_core.retention import backup_retention_from_env, job_retention_from_env
 from mensura_core.service import CoreService
 from mensura_core.undo_repositories import (
     InMemoryUndoRepository,
     UndoRepository,
 )
 from mensura_core.undo_service import UndoService
+from mensura_core.vault_index_repositories import (
+    InMemoryVaultIndexRepository,
+    VaultIndexRepository,
+)
+from mensura_core.vault_index_service import VaultIndexService
+from mensura_core.vault_indexer import HashingEmbedder, LocalVaultIndexer, VaultIndexBuilder
 from mensura_core.vault_inventory import LocalVaultInventoryBuilder, VaultInventoryBuilder
 from mensura_core.vault_repositories import (
     InMemoryVaultInventoryRepository,
@@ -93,8 +101,32 @@ from mensura_core.verification_sandbox import (
     VerificationSandboxFactory,
 )
 from mensura_core.verification_service import ProposalVerificationService
+from mensura_core.verification_sweep import VerificationSandboxSweeper
+from mensura_core.workspace_reservation import WorkspaceWriteReservation
 
 logger = logging.getLogger(__name__)
+
+
+def _run_startup_maintenance(app: FastAPI, core_repository: CoreRepository) -> None:
+    """Once-per-process hygiene, before the worker starts and before traffic.
+
+    Cleans up verification sandboxes orphaned by a previous process, then prunes backups
+    and terminal jobs beyond their retention policy. Every step is best-effort: a failure
+    is logged and never aborts startup.
+    """
+    try:
+        roots = [workspace.root_path for workspace in core_repository.list_workspaces()]
+        app.state.verification_sweeper.sweep(roots)
+    except Exception:
+        logger.warning("Verification sandbox sweep failed at startup.", exc_info=True)
+    try:
+        app.state.backup_service.prune()
+    except Exception:
+        logger.warning("Backup retention pruning failed at startup.", exc_info=True)
+    try:
+        app.state.job_service.prune_jobs()
+    except Exception:
+        logger.warning("Job retention pruning failed at startup.", exc_info=True)
 
 
 def create_app(
@@ -105,6 +137,8 @@ def create_app(
     guard_run_repository: GuardRunRepository | None = None,
     vault_inventory_builder: VaultInventoryBuilder | None = None,
     vault_inventory_repository: VaultInventoryRepository | None = None,
+    vault_indexer: VaultIndexBuilder | None = None,
+    vault_index_repository: VaultIndexRepository | None = None,
     context_pack_repository: ContextPackRepository | None = None,
     change_proposal_repository: ChangeProposalRepository | None = None,
     provider: ProviderAdapter | None = None,
@@ -123,6 +157,7 @@ def create_app(
     database_url: str | None = None,
     use_sql: bool = False,
     enable_worker: bool = False,
+    enable_startup_maintenance: bool = False,
 ) -> FastAPI:
     if run_migrations_on_startup:
         run_migrations(database_url)
@@ -135,6 +170,8 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        if enable_startup_maintenance:
+            _run_startup_maintenance(app, core_repository)
         worker_task: asyncio.Task[None] | None = None
         if enable_worker:
             worker: JobWorker = app.state.job_worker
@@ -180,6 +217,10 @@ def create_app(
     app.state.provider_registry = providers
     event_publisher = InMemoryEventPublisher()
     app.state.event_publisher = event_publisher
+    # One process-wide reservation shared by every live working-tree writer (apply, undo,
+    # and — transitively — the job worker) so at most one can mutate a workspace at a time.
+    write_reservation = WorkspaceWriteReservation()
+    app.state.workspace_write_reservation = write_reservation
     app.state.core_service = CoreService(
         core_repository,
         git_repository or GitPythonRepositoryAdapter(),
@@ -206,6 +247,18 @@ def create_app(
         core_repository,
         vault_inventory_builder or LocalVaultInventoryBuilder(),
         inventory_repository,
+    )
+    index_repository = (
+        vault_index_repository
+        if vault_index_repository is not None
+        else (SqlVaultIndexRepository(sf) if use_sql else InMemoryVaultIndexRepository())
+    )
+    vault_embedder = HashingEmbedder()
+    app.state.vault_index_service = VaultIndexService(
+        core_repository,
+        vault_indexer or LocalVaultIndexer(embedder=vault_embedder),
+        index_repository,
+        embedder=vault_embedder,
     )
     app.state.context_pack_service = ContextPackService(
         core_repository,
@@ -252,6 +305,7 @@ def create_app(
         app_repo,
         configuration_loader,
         command_runner,
+        write_reservation,
         event_publisher=event_publisher,
     )
     undo_repo = (
@@ -265,6 +319,7 @@ def create_app(
         undo_repo,
         configuration_loader,
         command_runner,
+        write_reservation,
         event_publisher=event_publisher,
     )
     backup_repo = (
@@ -278,6 +333,7 @@ def create_app(
         engine=engine if use_sql else None,
         db_path=Path(extract_db_path(database_url)) if database_url else None,
         event_publisher=event_publisher,
+        retention_policy=backup_retention_from_env(),
     )
     job_repo = (
         job_repository
@@ -289,6 +345,7 @@ def create_app(
         proposal_repository,
         app_repo,
         event_publisher=event_publisher,
+        retention_policy=job_retention_from_env(),
     )
     app.state.job_worker = JobWorker(
         job_repo,
@@ -298,6 +355,9 @@ def create_app(
         app.state.backup_service,
         event_publisher=event_publisher,
     )
+    # Constructed for every app; only invoked from the lifespan when startup maintenance
+    # is enabled (production `create_sql_app`), so unit-test apps never scan the temp dir.
+    app.state.verification_sweeper = VerificationSandboxSweeper()
     install_problem_handlers(app)
     app.include_router(health_router)
     app.include_router(v1_router)
@@ -330,4 +390,9 @@ def run() -> None:
 
 def create_sql_app() -> FastAPI:
     """App factory for production use: SQL-backed persistence, migrations, and the job worker."""
-    return create_app(run_migrations_on_startup=True, use_sql=True, enable_worker=True)
+    return create_app(
+        run_migrations_on_startup=True,
+        use_sql=True,
+        enable_worker=True,
+        enable_startup_maintenance=True,
+    )
